@@ -1,45 +1,98 @@
 /**
  * SpectaclesOpenClaw.ts
  *
- * Lens Studio component that sends a message to an OpenClaw gateway via
- * /v1/chat/completions and displays the reply on a Text component.
+ * Pinch-to-talk: hold pinch to record speech, release to send to OpenClaw.
  *
- * Authorization is intentionally omitted — Lens Studio's InternetModule
- * strips Authorization headers. Point the endpoint at the auth proxy
- * (bridge/proxy.js) which injects the token server-side.
+ * Uses:
+ * - GestureModule for pinch detection (hold = recording, release = send)
+ * - AsrModule for on-device speech-to-text
+ * - InternetModule to POST to OpenClaw gateway via auth proxy
+ *
+ * Authorization header is intentionally omitted — Lens Studio's
+ * InternetModule strips it. The local auth proxy (bridge/proxy.js)
+ * injects the Bearer token server-side.
  */
 
 @component
 export class SpectaclesOpenClaw extends BaseScriptComponent {
-  // Wire these in Inspector
   @input internetModule: InternetModule;
   @input replyText: Text;
 
-  // Set endpoint to: https://your-tunnel.trycloudflare.com/v1/chat/completions
+  // Set to: https://your-tunnel.trycloudflare.com/v1/chat/completions
   @input endpoint: string = "";
 
-  // Optional: pin to a specific OpenClaw session (e.g. "agent:main:main")
-  @input sessionKey: string = "";
+  // Optional: pin to a specific OpenClaw session
+  @input sessionKey: string = "agent:main:main";
 
-  @input testMessage: string = "hello from spectacles";
+  // Which hand triggers pinch-to-talk
+  @input useRightHand: boolean = true;
 
-  // Spectacles have no touch screen — auto-fire after this delay (seconds)
-  @input autoSendDelaySec: number = 2;
+  private gestureModule: GestureModule = require("LensStudio:GestureModule");
+  private asrModule = require("LensStudio:AsrModule");
 
   private busy: boolean = false;
-  private hasSent: boolean = false;
+  private isRecording: boolean = false;
+  private transcript: string = "";
 
   onAwake() {
-    this.setText("Starting...");
+    this.setText("Ready. Pinch and hold to talk.");
 
-    const delayed = this.createEvent("DelayedCallbackEvent");
-    delayed.bind(() => {
-      if (!this.hasSent) {
-        this.hasSent = true;
-        this.sendMessage(this.testMessage);
+    const handType = this.useRightHand
+      ? GestureModule.HandType.Right
+      : GestureModule.HandType.Left;
+
+    // Pinch down = start listening
+    this.gestureModule.getPinchDownEvent(handType).add(() => {
+      if (this.busy) return;
+      this.startListening();
+    });
+
+    // Pinch up = stop listening and send
+    this.gestureModule.getPinchUpEvent(handType).add(() => {
+      if (this.isRecording) {
+        this.stopListeningAndSend();
       }
     });
-    delayed.reset(Math.max(0, this.autoSendDelaySec));
+  }
+
+  private startListening() {
+    this.isRecording = true;
+    this.transcript = "";
+    this.setText("Listening...");
+
+    const options = AsrModule.AsrTranscriptionOptions.create();
+    options.silenceUntilTerminationMs = 2000;
+    options.mode = AsrModule.AsrMode.HighAccuracy;
+
+    options.onTranscriptionUpdateEvent.add(
+      (eventArgs: AsrModule.TranscriptionUpdateEvent) => {
+        this.transcript = eventArgs.text;
+        this.setText(`"${eventArgs.text}"${eventArgs.isFinal ? "" : "..."}`);
+      }
+    );
+
+    options.onTranscriptionErrorEvent.add(
+      (errorCode: AsrModule.AsrStatusCode) => {
+        print(`ASR error: ${errorCode}`);
+        this.setText(`[ASR Error] ${errorCode}`);
+        this.isRecording = false;
+      }
+    );
+
+    this.asrModule.startTranscribing(options);
+  }
+
+  private stopListeningAndSend() {
+    this.isRecording = false;
+    this.asrModule.stopTranscribing();
+
+    const text = this.transcript.trim();
+    if (!text) {
+      this.setText("No speech detected. Try again.");
+      return;
+    }
+
+    this.sendMessage(text);
   }
 
   private setText(t: string) {
@@ -79,7 +132,7 @@ export class SpectaclesOpenClaw extends BaseScriptComponent {
       const res = await this.internetModule.fetch(req);
 
       if (res.status !== 200) {
-        this.setText(`[Error] HTTP ${res.status}\n${this.endpoint}`);
+        this.setText(`[Error] HTTP ${res.status}`);
         return;
       }
 
@@ -87,7 +140,7 @@ export class SpectaclesOpenClaw extends BaseScriptComponent {
       const reply = data?.choices?.[0]?.message?.content ?? "(no reply)";
       this.setText(reply.trim());
     } catch (e) {
-      print(`SpectaclesOpenClaw error: ${e}`);
+      print(`Network error: ${e}`);
       this.setText(`[Error] ${e}`);
     } finally {
       this.busy = false;
