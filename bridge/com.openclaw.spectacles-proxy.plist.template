@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.spectacles-proxy</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{NODE_BIN}}</string>
+    <string>{{PROXY_SCRIPT}}</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENCLAW_GATEWAY_TOKEN</key>
+    <string>{{OPENCLAW_GATEWAY_TOKEN}}</string>
+    <key>OPENCLAW_GATEWAY_PORT</key>
+    <string>{{OPENCLAW_GATEWAY_PORT}}</string>
+    <key>PROXY_PORT</key>
+    <string>{{PROXY_PORT}}</string>
+  </dict>
+
+  <!-- Start immediately and keep running -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Logs -->
+  <key>StandardOutPath</key>
+  <string>~/Library/Logs/openclaw-spectacles-proxy.log</string>
+  <key>StandardErrorPath</key>
+  <string>~/Library/Logs/openclaw-spectacles-proxy.error.log</string>
+</dict>
+</plist>
