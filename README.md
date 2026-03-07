@@ -48,7 +48,7 @@ Connect [Snap Spectacles](https://spectacles.com) AR glasses to [OpenClaw](https
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/openclaw-spectacles.git
+git clone https://github.com/davidezhang/openclaw-spectacles.git
 cd openclaw-spectacles
 ```
 
@@ -105,11 +105,13 @@ See [`lens/README.md`](lens/README.md) for detailed wiring instructions.
 
 ## How It Works
 
-1. The lens boots and waits `autoSendDelaySec` seconds (default: 2). This delay replaces a button press — Spectacles have no touchscreen.
-2. It POSTs `{"messages":[{"role":"user","content":"..."}]}` to `<endpoint>/v1/chat/completions`.
+The lens uses **pinch-to-talk**: hold a pinch gesture to start recording speech, release to send. On-device speech-to-text (ASR) transcribes your voice locally on the Spectacles — no audio is sent to any server.
+
+1. You pinch and hold — the lens starts listening via `AsrModule` and shows your transcribed speech in real time.
+2. You release the pinch — the lens stops recording, takes the final transcript, and POSTs `{"messages":[{"role":"user","content":"..."}]}` to `<endpoint>/v1/chat/completions`.
 3. The request travels over HTTPS through the Cloudflare Tunnel to your machine.
 4. The local proxy receives the request, injects `Authorization: Bearer <token>`, and forwards it to OpenClaw.
-5. OpenClaw responds with a chat completion. The lens parses `choices[0].message.content` and renders it on the `replyText` component.
+5. OpenClaw responds with a chat completion. The lens parses `choices[0].message.content` and renders it on the AR display.
 
 ## Troubleshooting
 

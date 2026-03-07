@@ -37,14 +37,11 @@ With the Script Component selected, fill in the following fields:
 
 | Input | Type | Value |
 |---|---|---|
-| **Internet Module** | InternetModule | Select the **Internet Module** from the dropdown (it is added automatically to new projects; add it via **Add Component** → **Internet Module** if missing) |
+| **Internet Module** | InternetModule | Select the **Internet Module** from the dropdown (add it via **Add Component** → **Internet Module** if missing) |
 | **Reply Text** | Text | Drag your Screen Text object's Text component here |
-| **Endpoint** | string | `https://your-tunnel.trycloudflare.com` (no trailing slash) |
-| **Session Key** | string | _(optional)_ Your OpenClaw session key |
-| **Test Message** | string | `hello from spectacles` _(or whatever you want to ask)_ |
-| **Auto Send Delay Sec** | number | `2` _(seconds after lens loads before the message fires)_ |
-
-> **Tip:** Leave `Session Key` blank if your OpenClaw setup does not require one.
+| **Endpoint** | string | `https://your-tunnel.trycloudflare.com/v1/chat/completions` (or your named tunnel URL) |
+| **Session Key** | string | _(optional)_ Your OpenClaw session key, e.g. `agent:main:main` |
+| **Use Right Hand** | boolean | `true` for right-hand pinch, `false` for left |
 
 ## Step 6 — Enable Internet access in Project Settings
 
@@ -55,14 +52,23 @@ Without this, `InternetModule` requests will silently fail.
 
 ## Step 7 — Test in the Preview
 
-Press **Play** in Lens Studio. After `autoSendDelaySec` seconds you should see the Text component update with the response from OpenClaw. If it shows an `[Error]` message, check [`docs/troubleshooting.md`](../docs/troubleshooting.md).
+Press **Play** in Lens Studio. Perform a pinch gesture — you should see "Listening..." appear, then your transcribed speech, then the AI response. If it shows an `[Error]` message, check [`docs/troubleshooting.md`](../docs/troubleshooting.md).
 
 ## Step 8 — Push to Spectacles
 
 Use the **Spectacles** push button (lightning bolt icon) in Lens Studio to sideload the lens directly to your paired device.
 
+## Interaction
+
+The lens uses **pinch-to-talk**:
+
+1. **Pinch and hold** (right hand by default) — starts listening. Your speech is transcribed on-device in real time via `AsrModule`.
+2. **Release the pinch** — stops listening, sends the transcript to OpenClaw, and displays the AI reply on the AR display.
+
+No audio leaves the device. Only the text transcript is sent to your server.
+
 ## Notes
 
 - **No Authorization header** is set in the TypeScript code. Lens Studio's `InternetModule` strips it. The local proxy handles auth injection instead.
-- The `autoSendDelaySec` delay is intentional — it replaces a button press for hands-free interaction.
-- To use a real voice or gesture trigger, swap the `DelayedCallbackEvent` for a `TapEvent` or voice command event in the TypeScript file.
+- The `sessionKey` field routes your request to a specific OpenClaw session. Leave it blank to use the default.
+- To switch which hand triggers the interaction, toggle `useRightHand` in the Inspector.
