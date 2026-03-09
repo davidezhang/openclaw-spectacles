@@ -39,3 +39,9 @@ npm-debug.log*
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Lens Studio local/generated state
+**/Cache/
+**/PluginsUserPreferences/
+**/Workspaces/
+Spectacles_OpenClaw.esproj.*.lock
