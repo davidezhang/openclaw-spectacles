@@ -2,6 +2,11 @@
 
 Connect [Snap Spectacles](https://spectacles.com) AR glasses to [OpenClaw](https://openclaw.ai) — an AI assistant platform — using a lightweight local auth proxy and Cloudflare Tunnel.
 
+This repo now has two main goals:
+
+1. include the full Lens Studio project, not just a few key scripts, so the project can be opened, tested, and shared directly from GitHub
+2. add POV cropping so OpenClaw understands both what you are seeing and the specific region you want it to focus on
+
 ## Architecture
 
 ```
@@ -92,11 +97,13 @@ OPENCLAW_GATEWAY_TOKEN=your-token-here bash bridge/install-linux.sh
 
 ### 6. Open the Lens Studio project
 
-This repo now includes a full Lens Studio project at:
+This repo now includes the full Lens Studio project, not just extracted helper scripts, at:
 
 - `lens-project/Spectacles_OpenClaw`
 
 Open `lens-project/Spectacles_OpenClaw/OpenClaw_Crop.esproj` in Lens Studio.
+
+That project includes the POV cropping flow, so OpenClaw can understand both your first-person view and the specific crop region you want it to analyze.
 
 ### 7. Configure your local endpoint
 
