@@ -90,18 +90,33 @@ OPENCLAW_GATEWAY_TOKEN=your-token-here bash bridge/install-macos.sh
 OPENCLAW_GATEWAY_TOKEN=your-token-here bash bridge/install-linux.sh
 ```
 
-### 6. Wire up the Lens
+### 6. Open the Lens Studio project
 
-1. Open Lens Studio and create a new project (or open an existing one).
-2. Copy `lens/SpectaclesOpenClaw.ts` into your lens project's `Scripts/` folder.
-3. Add the script as a component on a Scene Object.
-4. In the Inspector, set:
-   - **Endpoint** → `https://...trycloudflare.com/v1/chat/completions`
-   - **Reply Text** → a Text component in your scene
-   - **Test Message** → whatever you want to ask
-5. Push the lens to your Spectacles via Lens Studio.
+This repo now includes a full Lens Studio project at:
 
-See [`lens/README.md`](lens/README.md) for detailed wiring instructions.
+- `lens-project/Spectacles_OpenClaw`
+
+Open `lens-project/Spectacles_OpenClaw/OpenClaw_Crop.esproj` in Lens Studio.
+
+### 7. Configure your local endpoint
+
+The shared Lens project now reads local endpoint/session settings from a git-ignored file:
+
+- `lens-project/Spectacles_OpenClaw/Assets/Scripts/LocalConfig.ts`
+
+Setup:
+
+1. Copy:
+   - `lens-project/Spectacles_OpenClaw/Assets/Scripts/LocalConfig.example.ts`
+   - to `lens-project/Spectacles_OpenClaw/Assets/Scripts/LocalConfig.ts`
+2. Edit it with your local values:
+   - `endpoint: "https://your-tunnel.example.com/v1/chat/completions"`
+   - `sessionKey: "agent:main:main"` (optional)
+3. Keep the Agent Inspector fields blank unless you explicitly want to override the local config.
+
+`LocalConfig.ts` is git-ignored, so your private tunnel URL stays local.
+
+The full shared Lens Studio project in `lens-project/Spectacles_OpenClaw/` is now the canonical Lens source of truth.
 
 ## How It Works
 
@@ -133,9 +148,8 @@ openclaw-spectacles/
 │   ├── install-macos.sh                          # macOS launchd installer
 │   ├── install-linux.sh                          # Linux systemd installer
 │   └── com.openclaw.spectacles-proxy.plist.template
-├── lens/
-│   ├── SpectaclesOpenClaw.ts                     # Lens Studio component
-│   └── README.md                                 # Lens setup guide
+├── lens-project/
+│   └── Spectacles_OpenClaw/                      # Full Lens Studio project (canonical shared Lens source)
 ├── docs/
 │   ├── architecture.md                           # Deep-dive on design choices
 │   └── troubleshooting.md                        # Error reference
@@ -145,6 +159,12 @@ openclaw-spectacles/
 ## Contributing
 
 Pull requests welcome. Please keep dependencies minimal and secrets out of commits.
+
+For Lens Studio projects in this repo:
+- do not commit `Cache/`, `PluginsUserPreferences/`, `Workspaces/`, or `.DS_Store`
+- do not commit private tunnel URLs or personal session keys in `Scene.scene`
+- keep private values in `Assets/Scripts/LocalConfig.ts` (git-ignored)
+- `LocalConfig.example.ts` is the checked-in template
 
 ## License
 

@@ -44,4 +44,8 @@ Desktop.ini
 **/Cache/
 **/PluginsUserPreferences/
 **/Workspaces/
-Spectacles_OpenClaw.esproj.*.lock
+**/*.esproj.*.lock
+**/.DS_Store
+
+# Local Lens config (keep private endpoint/session values out of git)
+lens-project/Spectacles_OpenClaw/Assets/Scripts/LocalConfig.ts

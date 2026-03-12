@@ -1,20 +1,20 @@
-- !<AssetImportMetadata/de700a97-4414-4d5a-b33a-985812087164>
+- !<AssetImportMetadata/93b0c8a9-a66a-44bf-99c7-a14b58aedfab>
   ImportedAssetIds:
-    TypeScriptAsset: !<reference> d9cd7446-1d73-4b4b-b560-7d2c087acc3b
+    TypeScriptAsset: !<reference> d5ef2a51-66a4-4fda-93c0-d094de949e4b
   ImporterName: TypeScriptAssetImporter
-  PrimaryAsset: !<reference> d9cd7446-1d73-4b4b-b560-7d2c087acc3b
+  PrimaryAsset: !<reference> d5ef2a51-66a4-4fda-93c0-d094de949e4b
   PackageType: NotAPackage
   LegacyPackagePolicy: ~
   ExtraData:
     {}
   AssetDataMap:
-    TypeScriptAsset: !<own> 2613a9ef-ca99-4962-8a1c-35a08e96544f
+    TypeScriptAsset: !<own> 9aee72c5-d95e-4bc5-a11a-035b40fb5bc9
   DependentFiles:
     []
   ImporterSettings: !<AssetImporterSettings>
     {}
   CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
-- !<TypeScriptAssetData/2613a9ef-ca99-4962-8a1c-35a08e96544f>
+- !<TypeScriptAssetData/9aee72c5-d95e-4bc5-a11a-035b40fb5bc9>
   SvgIcon: ""
   SetupScript:
     code: ""
@@ -22,15 +22,13 @@
   VersionMajor: 0
   VersionMinor: 0
   VersionPatch: 0
-  ComponentUid: 175b63fb-1538-414d-95b1-4b57de02cb2c
+  ComponentUid: 0126e002-9405-4608-ba6d-aa34818431f6
   ExportUid: 00000000-0000-0000-0000-000000000000
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
     endpoint: false
     internetModule: false
-    replyText: false
     sessionKey: false
-    useRightHand: false
   ScriptTypesHidden:
     {}
   ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
@@ -41,16 +39,12 @@
     []
   DefaultScriptInputs:
     - internetModule: !<reference.InternetModule> 00000000-0000-0000-0000-000000000000
-      replyText: !<reference.Text> 00000000-0000-0000-0000-000000000000
-      endpoint: "https://YOUR-TRYCLOUDFLARE-URL/chat"
+      endpoint: ""
       sessionKey: "agent:main:main"
-      useRightHand: true
   ScriptTypes:
     -
       {}
   InputLines:
     - // @input Asset.InternetModule internetModule
-    - // @input Component.Text replyText
     - // @input string endpoint
-    - '// @input string sessionKey = "agent:main:main"'
-    - // @input bool useRightHand = true
+    - // @input string sessionKey

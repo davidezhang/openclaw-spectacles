@@ -13,20 +13,19 @@ metaInfo:
     []
   tags:
     []
-  lensName: openclaw-specs
+  lensName: OpenClaw_Crop
   lensDescriptors:
     - EXPERIMENTAL_API
-    - GEN_AI_ICON
   lensApplicability:
     - Front
     - Back
   lensClientCompatibilities:
     - Spectacles
   platformBundlesEnabled: false
-  iconHash: 22ac6de423a540e805c7c4fa40d9694a
+  iconHash: ""
   videoPreviewHash: ""
-  fromTemplateName: Spectacles
-  fromTemplateUrl: Lens Studio 5.15.4.26022322
+  fromTemplateName: Default
+  fromTemplateUrl: Lens Studio 5.4.0.24110404
   activationCamera: Front
   sourceMapEnabled: false
   usingMinClientVersions: false
@@ -40,5 +39,5 @@ metaInfo:
     minor: 0
     patch: 0
     build: 0
-  documentId: 54b23af5-1d19-4342-9f04-b0fb301f5644
-  originalDocumentId: 54b23af5-1d19-4342-9f04-b0fb301f5644
+  documentId: 665557cb-0200-452c-bad3-b54f50712dad
+  originalDocumentId: c2589b15-e940-4728-a2cc-427b31673443

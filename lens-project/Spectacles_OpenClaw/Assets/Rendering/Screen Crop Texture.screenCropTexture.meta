@@ -1,8 +1,8 @@
-- !<AssetImportMetadata/83553819-55ea-4746-9cd4-4f50686273c0>
+- !<AssetImportMetadata/e222cbfb-e157-4d9f-8b9c-65983ad82af6>
   ImportedAssetIds:
-    InternetModule: !<reference> be4a0b52-b193-49de-95ae-f9d859e92acd
-  ImporterName: InternetModuleImporter
-  PrimaryAsset: !<reference> be4a0b52-b193-49de-95ae-f9d859e92acd
+    Texture: !<reference> cd12b01a-61d6-4671-bba2-6c3bde1a9812
+  ImporterName: ScreenCropTextureImporter
+  PrimaryAsset: !<reference> cd12b01a-61d6-4671-bba2-6c3bde1a9812
   PackageType: NotAPackage
   LegacyPackagePolicy: ~
   ExtraData:
