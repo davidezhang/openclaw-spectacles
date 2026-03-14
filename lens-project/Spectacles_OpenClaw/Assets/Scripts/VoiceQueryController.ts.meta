@@ -1,0 +1,59 @@
+- !<AssetImportMetadata/f86811d2-4aaf-49ab-9708-c913aa127b45>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 5171b1f3-dd07-464b-abbd-6886c414b57b
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 5171b1f3-dd07-464b-abbd-6886c414b57b
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> fdf2a374-6393-40ec-b88e-d8ac81ba5eb4
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/fdf2a374-6393-40ec-b88e-d8ac81ba5eb4>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: 5ca015d6-39de-4476-b3d2-ddf1eaa163be
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    agent: false
+    caption: false
+    editorCamObj: false
+    liveTranscriptObj: false
+    liveTranscriptText: false
+    loadingObj: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - agent: !<MappingBased.AssignableType> 00000000-0000-0000-0000-000000000000
+      caption: !<MappingBased.AssignableType_1> 00000000-0000-0000-0000-000000000000
+      liveTranscriptText: !<reference.Text> 00000000-0000-0000-0000-000000000000
+      liveTranscriptObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      loadingObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      editorCamObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - // @input AssignableType agent
+    - // @input AssignableType_1 caption
+    - // @input Component.Text liveTranscriptText
+    - // @input SceneObject liveTranscriptObj
+    - // @input SceneObject loadingObj
+    - // @input SceneObject editorCamObj

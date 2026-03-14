@@ -47,6 +47,27 @@ export class Agent extends BaseScriptComponent {
     );
   }
 
+  sendImageWithQuery(imageTex: Texture, queryText: string, callback: (response: string) => void) {
+    print("Making image request with custom query...");
+    Base64.encodeTextureAsync(
+      imageTex,
+      (base64String) => {
+        print("Image encode Success!");
+        this.sendAgentChat(queryText, base64String, callback);
+      },
+      () => {
+        print("Image encoding failed!");
+      },
+      this.ImageQuality,
+      this.ImageEncoding
+    );
+  }
+
+  sendTextOnly(queryText: string, callback: (response: string) => void) {
+    print("Making text-only request...");
+    this.sendTextChat(queryText, callback);
+  }
+
   async sendAgentChat(
     request: string,
     image64: string,
@@ -83,6 +104,53 @@ export class Agent extends BaseScriptComponent {
                 },
               },
             ],
+          },
+        ],
+      }),
+    });
+
+    try {
+      const res = await this.internetModule.fetch(req);
+      if (res.status !== 200) {
+        print(`[Error] HTTP ${res.status}`);
+        return;
+      }
+      const data = await res.json();
+      const reply = data?.choices?.[0]?.message?.content ?? "(no reply)";
+      print("Response from OpenClaw: " + reply);
+      callback(reply.trim());
+    } catch (error) {
+      print("Error in OpenClaw request: " + error);
+    }
+  }
+
+  async sendTextChat(
+    request: string,
+    callback: (response: string) => void
+  ) {
+    const endpoint = this.getResolvedEndpoint();
+    const sessionKey = this.getResolvedSessionKey();
+
+    if (!endpoint) {
+      print("[Error] No endpoint configured");
+      return;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (sessionKey !== "") {
+      headers["x-openclaw-session-key"] = sessionKey;
+    }
+
+    const req = new Request(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: request,
           },
         ],
       }),

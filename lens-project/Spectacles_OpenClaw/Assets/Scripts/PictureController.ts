@@ -1,8 +1,10 @@
 import {SIK} from "SpectaclesInteractionKit.lspkg/SIK"
+import {VoiceQueryController} from "./VoiceQueryController"
 
 @component
 export class PictureController extends BaseScriptComponent {
   @input scannerPrefab: ObjectPrefab
+  @input voiceQueryController: VoiceQueryController
 
   private isEditor = global.deviceInfoSystem.isEditor()
 
@@ -63,6 +65,9 @@ export class PictureController extends BaseScriptComponent {
   }
 
   createScanner() {
+    if (this.voiceQueryController) {
+      this.voiceQueryController.isScannerActive = true
+    }
     const scanner = this.scannerPrefab.instantiate(this.getSceneObject())
   }
 }

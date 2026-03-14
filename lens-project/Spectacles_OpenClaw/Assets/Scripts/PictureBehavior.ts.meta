@@ -27,7 +27,6 @@
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
     agent: false
-    caption: false
     captureRendMesh: false
     circleObjs: false
     cropRegion: false
@@ -35,6 +34,7 @@
     loadingObj: false
     picAnchorObj: false
     screenCropTexture: false
+    voiceQueryController: false
   ScriptTypesHidden:
     {}
   ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
@@ -53,7 +53,7 @@
       screenCropTexture: !<reference.Texture> 00000000-0000-0000-0000-000000000000
       cropRegion: !<MappingBased.AssignableType> 00000000-0000-0000-0000-000000000000
       agent: !<MappingBased.AssignableType_1> 00000000-0000-0000-0000-000000000000
-      caption: !<MappingBased.AssignableType_2> 00000000-0000-0000-0000-000000000000
+      voiceQueryController: !<MappingBased.AssignableType_2> 00000000-0000-0000-0000-000000000000
   ScriptTypes:
     -
       {}
@@ -66,4 +66,4 @@
     - // @input Asset.Texture screenCropTexture
     - // @input AssignableType cropRegion
     - // @input AssignableType_1 agent
-    - // @input AssignableType_2 caption
+    - // @input AssignableType_2 voiceQueryController

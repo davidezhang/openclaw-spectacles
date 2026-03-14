@@ -256,7 +256,7 @@
       screenCropTexture: !<reference.Texture> cd12b01a-61d6-4671-bba2-6c3bde1a9812
       cropRegion: !<MappingBased.AssignableType> 6b19d9dd-ebde-482a-462a-1bce50c898bc
       agent: !<MappingBased.AssignableType_1> 65938027-d818-4923-8afa-8b3b06f5c4a9
-      caption: !<MappingBased.AssignableType_2> 565a8d68-ef62-423f-6d32-0d477b710554
+      voiceQueryController: !<MappingBased.AssignableType_2> f8dcac82-ab30-4455-a82e-a5df46b367bf
   ScriptTypes:
     "":
       {}

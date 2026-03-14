@@ -27,6 +27,7 @@
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
     scannerPrefab: false
+    voiceQueryController: false
   ScriptTypesHidden:
     {}
   ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
@@ -37,8 +38,10 @@
     []
   DefaultScriptInputs:
     - scannerPrefab: !<reference.ObjectPrefab> 00000000-0000-0000-0000-000000000000
+      voiceQueryController: !<MappingBased.AssignableType> 00000000-0000-0000-0000-000000000000
   ScriptTypes:
     -
       {}
   InputLines:
     - // @input Asset.ObjectPrefab scannerPrefab
+    - // @input AssignableType voiceQueryController

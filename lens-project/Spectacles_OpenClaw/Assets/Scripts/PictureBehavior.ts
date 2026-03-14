@@ -1,7 +1,7 @@
 import {SIK} from "SpectaclesInteractionKit.lspkg/SIK"
-import {CaptionBehavior} from "./CaptionBehavior"
 import {Agent} from "./Agent"
 import {CropRegion} from "./CropRegion"
+import {VoiceQueryController} from "./VoiceQueryController"
 
 const BOX_MIN_SIZE = 8 //min size in cm for image capture
 
@@ -15,7 +15,7 @@ export class PictureBehavior extends BaseScriptComponent {
   @input screenCropTexture: Texture
   @input cropRegion: CropRegion
   @input agent: Agent
-  @input caption: CaptionBehavior
+  @input voiceQueryController: VoiceQueryController
 
   private isEditor = global.deviceInfoSystem.isEditor()
 
@@ -61,9 +61,12 @@ export class PictureBehavior extends BaseScriptComponent {
         this.loadingObj.enabled = true
         this.cropRegion.enabled = false
         this.captureRendMesh.mainPass.captureImage = ProceduralTextureProvider.createFromTexture(this.screenCropTexture)
+        //editor auto-send: use makeImageRequest for quick testing
         this.agent.makeImageRequest(this.captureRendMesh.mainPass.captureImage, (response) => {
           this.loadingObj.enabled = false
-          this.loadCaption(response)
+          if (this.voiceQueryController) {
+            this.voiceQueryController.showResponse(response)
+          }
         })
       })
       delayedEvent.reset(0.1)
@@ -101,17 +104,6 @@ export class PictureBehavior extends BaseScriptComponent {
     }
   }
 
-  private loadCaption(text: string) {
-    //position caption 5cm above top of box formed by circles
-    const topCenterPos = this.circleTrans[0]
-      .getWorldPosition()
-      .add(this.circleTrans[1].getWorldPosition())
-      .uniformScale(0.5)
-    const captionPos = topCenterPos.add(this.picAnchorTrans.up.uniformScale(1)) //1.5
-    const captionRot = this.picAnchorTrans.getWorldRotation()
-    this.caption.openCaption(text, captionPos, captionRot)
-  }
-
   private processImage() {
     if (this.updateEvent != null) {
       //remove all events
@@ -124,17 +116,36 @@ export class PictureBehavior extends BaseScriptComponent {
       //make sure image area is above threshold
       if (this.getHeight() < BOX_MIN_SIZE || this.getWidth() < BOX_MIN_SIZE) {
         print("too small, destroying.")
+        if (this.voiceQueryController) {
+          this.voiceQueryController.isScannerActive = false
+        }
         this.getSceneObject().destroy()
         return
       }
-      //remove update loop and process image
-      this.loadingObj.enabled = true
+      //freeze crop and stage the image for voice query
       this.cropRegion.enabled = false
 
-      this.agent.makeImageRequest(this.captureRendMesh.mainPass.captureImage, (response) => {
-        this.loadingObj.enabled = false
-        this.loadCaption(response)
-      })
+      const capturedTex = this.captureRendMesh.mainPass.captureImage
+
+      //compute caption anchor position (above the crop box)
+      const topCenterPos = this.circleTrans[0]
+        .getWorldPosition()
+        .add(this.circleTrans[1].getWorldPosition())
+        .uniformScale(0.5)
+      const captionPos = topCenterPos.add(this.picAnchorTrans.up.uniformScale(1))
+      const captionRot = this.picAnchorTrans.getWorldRotation()
+
+      //hand off to VoiceQueryController for staging
+      if (this.voiceQueryController) {
+        this.voiceQueryController.isScannerActive = false
+        this.voiceQueryController.stageImage(
+          capturedTex,
+          this.getSceneObject(),
+          this.picAnchorTrans,
+          captionPos,
+          captionRot
+        )
+      }
     }
   }
 

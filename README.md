@@ -127,13 +127,28 @@ The full shared Lens Studio project in `lens-project/Spectacles_OpenClaw/` is no
 
 ## How It Works
 
-The lens uses **pinch-to-talk**: hold a pinch gesture to start recording speech, release to send. On-device speech-to-text (ASR) transcribes your voice locally on the Spectacles — no audio is sent to any server.
+The lens supports two interaction modes: **pinch-to-crop** (two hands) for capturing images, and **pinch-to-talk** (right hand) for voice queries. Images are staged — not auto-sent — and paired with a voice query before being sent to OpenClaw.
 
-1. You pinch and hold — the lens starts listening via `AsrModule` and shows your transcribed speech in real time.
-2. You release the pinch — the lens stops recording, takes the final transcript, and POSTs `{"messages":[{"role":"user","content":"..."}]}` to `<endpoint>/v1/chat/completions`.
-3. The request travels over HTTPS through the Cloudflare Tunnel to your machine.
-4. The local proxy receives the request, injects `Authorization: Bearer <token>`, and forwards it to OpenClaw.
-5. OpenClaw responds with a chat completion. The lens parses `choices[0].message.content` and renders it on the AR display.
+### Image Capture (Two-Hand Pinch)
+1. Pinch both hands close together — a scanner spawns and you drag a crop rectangle by moving your hands.
+2. Release both pinches — the cropped image is **staged** (captured but not yet sent). The frame displays at full size for 2 seconds, then shrinks to the lower part of your view.
+3. The staged image remains available for **30 seconds**. A new crop within this window replaces the existing staged image.
+4. After 30 seconds with no voice query, the staged image is discarded.
+
+### Voice Query (Right-Hand Pinch-and-Hold)
+1. Pinch and hold your **right hand** — the lens starts listening via `AsrModule` and shows your transcribed speech live in AR.
+2. Release the pinch — the lens stops recording, takes the final transcript, and:
+   - If an image is staged: sends both the image and your voice query together as a multimodal request.
+   - If no image is staged: sends a text-only query.
+3. The request POSTs `{"messages":[{"role":"user","content":...}]}` to `<endpoint>/v1/chat/completions`.
+4. The request travels over HTTPS through the Cloudflare Tunnel to your machine.
+5. The local proxy receives the request, injects `Authorization: Bearer <token>`, and forwards it to OpenClaw.
+6. OpenClaw responds with a chat completion. The lens parses `choices[0].message.content` and renders it on the AR display.
+
+### Gesture Disambiguation
+- **Two hands pinching close together** → image crop mode
+- **Right hand pinch only** (left hand open) → voice recording
+- ASR is suppressed while the crop scanner is active
 
 ## Troubleshooting
 
@@ -157,6 +172,15 @@ openclaw-spectacles/
 │   └── com.openclaw.spectacles-proxy.plist.template
 ├── lens-project/
 │   └── Spectacles_OpenClaw/                      # Full Lens Studio project (canonical shared Lens source)
+│       └── Assets/Scripts/
+│           ├── Agent.ts                           # API client (image+text and text-only requests)
+│           ├── VoiceQueryController.ts            # Pinch-and-hold ASR + staged image manager
+│           ├── PictureController.ts               # Two-hand pinch → spawn crop scanner
+│           ├── PictureBehavior.ts                 # Crop rectangle tracking → stages image
+│           ├── CaptionBehavior.ts                 # Animated response text display
+│           ├── CameraService.ts                   # Camera init + coordinate transforms
+│           ├── CropRegion.ts                      # Dynamic crop rect from tracked points
+│           └── LocalConfig.ts                     # Endpoint + session key (git-ignored)
 ├── docs/
 │   ├── architecture.md                           # Deep-dive on design choices
 │   └── troubleshooting.md                        # Error reference
