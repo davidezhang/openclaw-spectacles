@@ -11,8 +11,6 @@ const STAGING_SHRINK_SCALE = 0.3
 export class VoiceQueryController extends BaseScriptComponent {
   @input agent: Agent
   @input caption: CaptionBehavior
-  @input liveTranscriptText: Text
-  @input liveTranscriptObj: SceneObject
   @input loadingObj: SceneObject
   @input editorCamObj: SceneObject
 
@@ -44,9 +42,6 @@ export class VoiceQueryController extends BaseScriptComponent {
     if (this.loadingObj) {
       this.loadingObj.enabled = false
       this.loadingTrans = this.loadingObj.getTransform()
-    }
-    if (this.liveTranscriptText) {
-      this.liveTranscriptText.text = ""
     }
 
     if (!this.isEditor) {
@@ -171,10 +166,7 @@ export class VoiceQueryController extends BaseScriptComponent {
 
     this.isRecording = true
     this.transcript = ""
-    if (this.liveTranscriptText) {
-      this.liveTranscriptText.text = ""
-    }
-    this.positionLiveTranscript()
+    this.caption.hide()
 
     const options = AsrModule.AsrTranscriptionOptions.create()
     options.mode = AsrModule.AsrMode.HighAccuracy
@@ -182,19 +174,18 @@ export class VoiceQueryController extends BaseScriptComponent {
 
     options.onTranscriptionUpdateEvent.add((eventArgs: any) => {
       this.transcript = eventArgs.text
-      if (this.liveTranscriptText) {
-        this.liveTranscriptText.text = eventArgs.isFinal
-          ? eventArgs.text
-          : eventArgs.text + "..."
-      }
+      const displayText = eventArgs.isFinal
+        ? eventArgs.text
+        : eventArgs.text + "..."
+      const pos = this.getDefaultPos()
+      const rot = this.getDefaultRot()
+      this.caption.setText(displayText, pos, rot)
     })
 
     options.onTranscriptionErrorEvent.add((error: any) => {
       print("ASR error: " + error)
       this.isRecording = false
-      if (this.liveTranscriptText) {
-        this.liveTranscriptText.text = ""
-      }
+      this.caption.hide()
     })
 
     print("ASR started — listening...")
@@ -206,21 +197,17 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.isRecording = false
 
     const query = this.transcript.trim()
-    if (this.liveTranscriptText) {
-      this.liveTranscriptText.text = query || ""
-    }
 
     if (!query) {
       print("No speech detected")
-      if (this.liveTranscriptText) {
-        this.liveTranscriptText.text = "No speech detected"
-        // Clear after 2s
-        const clearEvent = this.createEvent("DelayedCallbackEvent")
-        clearEvent.bind(() => {
-          if (this.liveTranscriptText) this.liveTranscriptText.text = ""
-        })
-        clearEvent.reset(2)
-      }
+      const pos = this.getDefaultPos()
+      const rot = this.getDefaultRot()
+      this.caption.setText("No speech detected", pos, rot)
+      const clearEvent = this.createEvent("DelayedCallbackEvent")
+      clearEvent.bind(() => {
+        this.caption.hide()
+      })
+      clearEvent.reset(2)
       return
     }
 
@@ -233,7 +220,6 @@ export class VoiceQueryController extends BaseScriptComponent {
       const captionRot = this.stagedCaptionRot
       this.agent.sendImageWithQuery(this.stagedImageTex, query, (response) => {
         this.showLoading(false)
-        this.clearLiveTranscript()
         if (captionPos && captionRot) {
           this.caption.openCaption(response, captionPos, captionRot)
         } else {
@@ -245,7 +231,6 @@ export class VoiceQueryController extends BaseScriptComponent {
       // Text-only query — no image
       this.agent.sendTextOnly(query, (response) => {
         this.showLoading(false)
-        this.clearLiveTranscript()
         this.showCaptionDefault(response)
       })
     }
@@ -257,18 +242,9 @@ export class VoiceQueryController extends BaseScriptComponent {
     }
   }
 
-  private clearLiveTranscript() {
-    if (this.liveTranscriptText) {
-      this.liveTranscriptText.text = ""
-    }
-  }
-
   // Caption at a default position (for text-only queries without a crop region)
   private showCaptionDefault(text: string) {
-    const camTrans = this.editorCamObj.getTransform()
-    const pos = camTrans.getWorldPosition().add(camTrans.forward.uniformScale(-60))
-    const rot = quat.lookAt(camTrans.forward, vec3.up())
-    this.caption.openCaption(text, pos, rot)
+    this.caption.openCaption(text, this.getDefaultPos(), this.getDefaultRot())
   }
 
   // Public helper for editor auto-send path
@@ -276,15 +252,13 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.showCaptionDefault(text)
   }
 
-  // Position the live transcript text in front of the camera
-  private positionLiveTranscript() {
-    if (!this.liveTranscriptObj) return
+  private getDefaultPos(): vec3 {
     const camTrans = this.editorCamObj.getTransform()
-    const pos = camTrans.getWorldPosition().add(camTrans.forward.uniformScale(-60))
-    const rot = quat.lookAt(camTrans.forward, vec3.up())
-    const trans = this.liveTranscriptObj.getTransform()
-    trans.setWorldPosition(pos)
-    trans.setWorldRotation(rot)
-    trans.setWorldScale(vec3.one().uniformScale(0.5))
+    return camTrans.getWorldPosition().add(camTrans.forward.uniformScale(-60))
+  }
+
+  private getDefaultRot(): quat {
+    const camTrans = this.editorCamObj.getTransform()
+    return quat.lookAt(camTrans.forward, vec3.up())
   }
 }
