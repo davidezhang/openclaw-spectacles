@@ -63,11 +63,19 @@ cd openclaw-spectacles
 export OPENCLAW_GATEWAY_TOKEN=your-token-here
 ```
 
+Optional overrides:
+
+```bash
+export OPENCLAW_GATEWAY_PORT=18789
+export PROXY_PORT=3210
+export SPECTACLES_IMAGE_DIR="$HOME/.openclaw/workspace/tmp/spectacles-captures"
+```
+
 ### 3. Start the auth proxy
 
 ```bash
 node bridge/proxy.js
-# Auth proxy listening on :3210 → forwarding to :18789
+# Spectacles auth proxy on :3210 -> gateway :18789
 ```
 
 ### 4. Start the Cloudflare Tunnel
@@ -90,10 +98,15 @@ Copy the `https://...trycloudflare.com` URL.
 OPENCLAW_GATEWAY_TOKEN=your-token-here bash bridge/install-macos.sh
 ```
 
+This generates a real per-user plist in `~/Library/LaunchAgents/` from the public template:
+- `bridge/com.openclaw.spectacles-proxy.plist.template`
+
 **Linux:**
 ```bash
 OPENCLAW_GATEWAY_TOKEN=your-token-here bash bridge/install-linux.sh
 ```
+
+The real installed service file is written under your home directory and should not be committed.
 
 ### 6. Open the Lens Studio project
 
@@ -150,6 +163,11 @@ The lens supports two interaction modes: **pinch-to-crop** (two hands) for captu
 - **Right hand pinch only** (left hand open) → voice recording
 - ASR is suppressed while the crop scanner is active
 
+## Setup Docs
+
+- [`docs/setup.md`](docs/setup.md) — clone-to-working setup for macOS/Linux
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) — failure modes and fixes
+
 ## Troubleshooting
 
 See [`docs/troubleshooting.md`](docs/troubleshooting.md) for a full guide. Quick reference:
@@ -186,6 +204,19 @@ openclaw-spectacles/
 │   └── troubleshooting.md                        # Error reference
 └── README.md
 ```
+
+## Security / Sharing Notes
+
+Safe to commit and share publicly:
+- `bridge/proxy.js`
+- `bridge/com.openclaw.spectacles-proxy.plist.template`
+- docs and Lens project files with placeholder/local-only values
+
+Do not commit:
+- real gateway tokens
+- your generated `~/Library/LaunchAgents/com.openclaw.spectacles-proxy.plist`
+- your generated Linux user service file under `~/.config/systemd/user/`
+- private tunnel URLs or personal session keys
 
 ## Contributing
 
