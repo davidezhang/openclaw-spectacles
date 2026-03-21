@@ -39,7 +39,7 @@ export class CaptionBehavior extends BaseScriptComponent {
     })
   }
 
-  // Update text without re-animating. Scales up smoothly if currently hidden.
+  // Update text immediately without an intro animation.
   setText(text: string, pos: vec3, rot: quat) {
     this.captionText.text = text
     this.trans.setWorldPosition(pos)
@@ -48,15 +48,7 @@ export class CaptionBehavior extends BaseScriptComponent {
     if (!this.isVisible) {
       this.isVisible = true
       if (this.scaleCancel) this.scaleCancel.cancel()
-      animate({
-        easing: "ease-out-back",
-        duration: 0.3,
-        update: (t: number) => {
-          this.scaleTrans.setLocalScale(vec3.lerp(vec3.zero(), vec3.one().uniformScale(1.33), t))
-        },
-        ended: null,
-        cancelSet: this.scaleCancel
-      })
+      this.scaleTrans.setLocalScale(vec3.one().uniformScale(1.33))
     }
   }
 

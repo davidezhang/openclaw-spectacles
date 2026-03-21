@@ -6,12 +6,12 @@ import {CaptionBehavior} from "./CaptionBehavior"
 const STAGING_TIMEOUT_SEC = 30
 const STAGING_SHRINK_DELAY_SEC = 2
 const STAGING_SHRINK_SCALE = 0.3
+const ASR_FINALIZATION_WAIT_SEC = 0.35
 
 @component
 export class VoiceQueryController extends BaseScriptComponent {
   @input agent: Agent
   @input caption: CaptionBehavior
-  @input loadingObj: SceneObject
   @input editorCamObj: SceneObject
 
   private asrModule: AsrModule = require("LensStudio:AsrModule")
@@ -30,20 +30,17 @@ export class VoiceQueryController extends BaseScriptComponent {
   private stagedAnchorTrans: Transform | null = null
   private stagedCaptionPos: vec3 | null = null
   private stagedCaptionRot: quat | null = null
+  private activeCaptionPos: vec3 | null = null
+  private activeCaptionRot: quat | null = null
   private stagingTimeoutEvent: any = null
+  private pendingSendEvent: any = null
   private shrinkCancel: CancelSet = new CancelSet()
+  private isWaitingForFinalTranscript: boolean = false
 
   // Scanner lock — suppresses ASR while two-hand crop is active
   isScannerActive: boolean = false
 
-  private loadingTrans: Transform | null = null
-
   onAwake() {
-    if (this.loadingObj) {
-      this.loadingObj.enabled = false
-      this.loadingTrans = this.loadingObj.getTransform()
-    }
-
     if (!this.isEditor) {
       this.rightHand.onPinchDown.add(this.onRightPinchDown)
       this.rightHand.onPinchUp.add(this.onRightPinchUp)
@@ -159,50 +156,60 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.stopRecordingAndSend()
   }
 
-  private startRecording() {
-    if (this.isRecording) {
-      this.asrModule.stopTranscribing()
+  private getCurrentCaptionPose(): {pos: vec3; rot: quat} {
+    if (this.stagedCaptionPos && this.stagedCaptionRot) {
+      return {
+        pos: this.stagedCaptionPos,
+        rot: this.stagedCaptionRot,
+      }
     }
 
-    this.isRecording = true
-    this.transcript = ""
-    this.caption.hide()
-
-    const options = AsrModule.AsrTranscriptionOptions.create()
-    options.mode = AsrModule.AsrMode.HighAccuracy
-    options.silenceUntilTerminationMs = 1500
-
-    options.onTranscriptionUpdateEvent.add((eventArgs: any) => {
-      this.transcript = eventArgs.text
-      const displayText = eventArgs.isFinal
-        ? eventArgs.text
-        : eventArgs.text + "..."
-      const pos = this.getDefaultPos()
-      const rot = this.getDefaultRot()
-      this.caption.setText(displayText, pos, rot)
-    })
-
-    options.onTranscriptionErrorEvent.add((error: any) => {
-      print("ASR error: " + error)
-      this.isRecording = false
-      this.caption.hide()
-    })
-
-    print("ASR started — listening...")
-    this.asrModule.startTranscribing(options)
+    return {
+      pos: this.getDefaultPos(),
+      rot: this.getDefaultRot(),
+    }
   }
 
-  private stopRecordingAndSend() {
-    this.asrModule.stopTranscribing()
-    this.isRecording = false
+  private lockCaptionPose() {
+    const pose = this.getCurrentCaptionPose()
+    this.activeCaptionPos = pose.pos
+    this.activeCaptionRot = pose.rot
+  }
+
+  private getCaptionPose(): {pos: vec3; rot: quat} {
+    if (this.activeCaptionPos && this.activeCaptionRot) {
+      return {
+        pos: this.activeCaptionPos,
+        rot: this.activeCaptionRot,
+      }
+    }
+
+    return this.getCurrentCaptionPose()
+  }
+
+  private updateCaption(text: string) {
+    const pose = this.getCaptionPose()
+    this.caption.setText(text, pose.pos, pose.rot)
+  }
+
+  private clearPendingSendEvent() {
+    if (this.pendingSendEvent) {
+      this.removeEvent(this.pendingSendEvent)
+      this.pendingSendEvent = null
+    }
+  }
+
+  private finalizeStoppedRecording() {
+    if (!this.isWaitingForFinalTranscript) return
+
+    this.isWaitingForFinalTranscript = false
+    this.clearPendingSendEvent()
 
     const query = this.transcript.trim()
 
     if (!query) {
       print("No speech detected")
-      const pos = this.getDefaultPos()
-      const rot = this.getDefaultRot()
-      this.caption.setText("No speech detected", pos, rot)
+      this.updateCaption("No speech detected")
       const clearEvent = this.createEvent("DelayedCallbackEvent")
       clearEvent.bind(() => {
         this.caption.hide()
@@ -212,39 +219,74 @@ export class VoiceQueryController extends BaseScriptComponent {
     }
 
     print("Sending query: " + query)
-    this.showLoading(true)
+    this.updateCaption("Thinking...")
 
     if (this.stagedImageTex) {
-      // Send image + voice query together
-      const captionPos = this.stagedCaptionPos
-      const captionRot = this.stagedCaptionRot
       this.agent.sendImageWithQuery(this.stagedImageTex, query, (response) => {
-        this.showLoading(false)
-        if (captionPos && captionRot) {
-          this.caption.openCaption(response, captionPos, captionRot)
-        } else {
-          this.showCaptionDefault(response)
-        }
+        this.updateCaption(response)
         this.clearStagedImage(true)
       })
     } else {
-      // Text-only query — no image
       this.agent.sendTextOnly(query, (response) => {
-        this.showLoading(false)
-        this.showCaptionDefault(response)
+        this.updateCaption(response)
       })
     }
   }
 
-  private showLoading(on: boolean) {
-    if (this.loadingObj) {
-      this.loadingObj.enabled = on
+  private startRecording() {
+    if (this.isRecording) {
+      this.asrModule.stopTranscribing()
     }
+
+    this.clearPendingSendEvent()
+    this.isWaitingForFinalTranscript = false
+    this.isRecording = true
+    this.transcript = ""
+    this.lockCaptionPose()
+    this.updateCaption("Listening...")
+
+    const options = AsrModule.AsrTranscriptionOptions.create()
+    options.mode = AsrModule.AsrMode.Balanced
+    options.silenceUntilTerminationMs = 500
+
+    options.onTranscriptionUpdateEvent.add((eventArgs: any) => {
+      this.transcript = eventArgs.text
+      const displayText = eventArgs.isFinal ? eventArgs.text : eventArgs.text + "..."
+      this.updateCaption(displayText)
+
+      if (eventArgs.isFinal && this.isWaitingForFinalTranscript) {
+        this.finalizeStoppedRecording()
+      }
+    })
+
+    options.onTranscriptionErrorEvent.add((error: any) => {
+      print("ASR error: " + error)
+      this.isRecording = false
+      this.isWaitingForFinalTranscript = false
+      this.clearPendingSendEvent()
+      this.updateCaption("ASR error")
+    })
+
+    print("ASR started — listening...")
+    this.asrModule.startTranscribing(options)
+  }
+
+  private stopRecordingAndSend() {
+    this.isRecording = false
+    this.isWaitingForFinalTranscript = true
+    this.asrModule.stopTranscribing()
+
+    this.clearPendingSendEvent()
+    this.pendingSendEvent = this.createEvent("DelayedCallbackEvent")
+    this.pendingSendEvent.bind(() => {
+      this.finalizeStoppedRecording()
+    })
+    this.pendingSendEvent.reset(ASR_FINALIZATION_WAIT_SEC)
   }
 
   // Caption at a default position (for text-only queries without a crop region)
   private showCaptionDefault(text: string) {
-    this.caption.openCaption(text, this.getDefaultPos(), this.getDefaultRot())
+    this.updateCaption(text)
   }
 
   // Public helper for editor auto-send path

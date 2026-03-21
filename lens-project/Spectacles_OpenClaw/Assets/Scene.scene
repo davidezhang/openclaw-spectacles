@@ -3474,7 +3474,6 @@
     "":
       agent: !<MappingBased.AssignableType> 65938027-d818-4923-8afa-8b3b06f5c4a9
       caption: !<MappingBased.AssignableType_1> cffad6a3-c67a-4c9b-b12f-fc127f0fbf93
-      loadingObj: !<reference.SceneObject> 60a64335-be72-4231-a8f7-418ddaeb0e63
       editorCamObj: !<reference.SceneObject> 00000000-0000-0065-0000-000000000064
   ScriptTypes:
     "":
