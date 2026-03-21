@@ -8,6 +8,8 @@ bun.lockb
 .env
 .env.*
 *.env
+!.env.example
+!*.env.example
 
 # macOS
 .DS_Store
