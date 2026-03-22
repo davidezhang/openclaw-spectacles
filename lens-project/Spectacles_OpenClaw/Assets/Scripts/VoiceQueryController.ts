@@ -336,9 +336,8 @@ export class VoiceQueryController extends BaseScriptComponent {
   }
 
   private startRecording() {
-    if (this.isRecording) {
-      this.asrModule.stopTranscribing()
-    }
+    // No need to call stopTranscribing() — startTranscribing()
+    // automatically cancels any active session.
 
     this.clearPendingSendEvent()
     this.clearResponseTimeout()
@@ -349,35 +348,40 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.updateCaption("Listening...")
 
     const options = AsrModule.AsrTranscriptionOptions.create()
-    options.mode = AsrModule.AsrMode.Balanced
-    options.silenceUntilTerminationMs = 500
+    options.mode = AsrModule.AsrMode.HighAccuracy
+    options.silenceUntilTerminationMs = 2000
 
-    options.onTranscriptionUpdateEvent.add((eventArgs: any) => {
-      this.transcript = eventArgs.text
-      const displayText = eventArgs.isFinal ? eventArgs.text : eventArgs.text + "..."
-      this.updateCaption(displayText)
+    options.onTranscriptionUpdateEvent.add(
+      (eventArgs: AsrModule.TranscriptionUpdateEvent) => {
+        this.transcript = eventArgs.text
+        const displayText = eventArgs.isFinal ? eventArgs.text : eventArgs.text + "..."
+        this.updateCaption(displayText)
 
-      if (eventArgs.isFinal && this.isWaitingForFinalTranscript) {
-        this.finalizeStoppedRecording()
+        if (eventArgs.isFinal && this.isWaitingForFinalTranscript) {
+          this.finalizeStoppedRecording()
+        }
       }
-    })
+    )
 
-    options.onTranscriptionErrorEvent.add((error: any) => {
-      print("ASR error: " + error)
-      this.isRecording = false
-      this.isWaitingForFinalTranscript = false
-      this.clearPendingSendEvent()
-      this.updateCaption("ASR error")
-    })
+    options.onTranscriptionErrorEvent.add(
+      (errorCode: AsrModule.AsrStatusCode) => {
+        // stopTranscribing() fires an error callback — don't clear
+        // finalization state when we intentionally stopped recording.
+        if (this.isWaitingForFinalTranscript) return
+        print("ASR error: " + errorCode)
+        this.isRecording = false
+        this.clearPendingSendEvent()
+        this.updateCaption("ASR error")
+      }
+    )
 
-    print("ASR started — listening...")
     this.asrModule.startTranscribing(options)
   }
 
   private stopRecordingAndSend() {
     this.isRecording = false
     this.isWaitingForFinalTranscript = true
-    this.asrModule.stopTranscribing()
+    this.asrModule.stopTranscribing().catch(() => {})
 
     this.clearPendingSendEvent()
     this.pendingSendEvent = this.createEvent("DelayedCallbackEvent")
