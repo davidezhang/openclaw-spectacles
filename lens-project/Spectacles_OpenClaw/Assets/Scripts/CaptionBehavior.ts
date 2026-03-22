@@ -4,10 +4,17 @@ import animate, {CancelSet} from "SpectaclesInteractionKit.lspkg/Utils/animate"
 export class CaptionBehavior extends BaseScriptComponent {
   @input captionText: Text
   @input scaleObj: SceneObject
+  @input
+  @allowUndefined
+  followTargetObj: SceneObject
 
   private trans: Transform
   private scaleTrans: Transform
   private startPos: vec3
+  private followTarget: Transform | null = null
+  private followDistance: number = 60
+  private followVerticalOffset: number = -8
+  private updateEvent: SceneEvent | null = null
 
   private scaleCancel: CancelSet = new CancelSet()
 
@@ -17,15 +24,41 @@ export class CaptionBehavior extends BaseScriptComponent {
     this.trans = this.getSceneObject().getTransform()
     this.scaleTrans = this.scaleObj.getTransform()
     this.scaleTrans.setLocalScale(vec3.zero())
+    this.followTarget = this.followTargetObj ? this.followTargetObj.getTransform() : null
+
+    this.updateEvent = this.createEvent("UpdateEvent")
+    this.updateEvent.bind(() => {
+      this.updateFollowTransform()
+    })
+  }
+
+
+  private updateFollowTransform() {
+    if (!this.isVisible || !this.followTarget) return
+
+    const camPos = this.followTarget.getWorldPosition()
+    const camForward = this.followTarget.forward
+    const camUp = this.followTarget.up
+
+    this.trans.setWorldPosition(
+      camPos
+        .add(camForward.uniformScale(-this.followDistance))
+        .add(camUp.uniformScale(this.followVerticalOffset))
+    )
+    this.trans.setWorldRotation(quat.lookAt(camForward, vec3.up()))
+    this.trans.setWorldScale(vec3.one().uniformScale(0.5))
   }
 
   openCaption(text: string, pos: vec3, rot: quat) {
     this.startPos = pos
     this.captionText.text = text
-    this.trans.setWorldPosition(pos)
-    this.trans.setWorldRotation(rot)
-    this.trans.setWorldScale(vec3.one().uniformScale(0.5))
     this.isVisible = true
+    this.updateFollowTransform()
+    if (!this.followTarget) {
+      this.trans.setWorldPosition(pos)
+      this.trans.setWorldRotation(rot)
+      this.trans.setWorldScale(vec3.one().uniformScale(0.5))
+    }
     //animate in caption
     if (this.scaleCancel) this.scaleCancel.cancel()
     animate({
@@ -42,13 +75,17 @@ export class CaptionBehavior extends BaseScriptComponent {
   // Update text immediately without an intro animation.
   setText(text: string, pos: vec3, rot: quat) {
     this.captionText.text = text
-    this.trans.setWorldPosition(pos)
-    this.trans.setWorldRotation(rot)
-    this.trans.setWorldScale(vec3.one().uniformScale(0.5))
     if (!this.isVisible) {
       this.isVisible = true
       if (this.scaleCancel) this.scaleCancel.cancel()
       this.scaleTrans.setLocalScale(vec3.one().uniformScale(1.33))
+    }
+
+    this.updateFollowTransform()
+    if (!this.followTarget) {
+      this.trans.setWorldPosition(pos)
+      this.trans.setWorldRotation(rot)
+      this.trans.setWorldScale(vec3.one().uniformScale(0.5))
     }
   }
 

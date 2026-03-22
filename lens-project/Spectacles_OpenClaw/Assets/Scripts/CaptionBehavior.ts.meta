@@ -27,6 +27,7 @@
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
     captionText: false
+    followTargetObj: false
     scaleObj: false
   ScriptTypesHidden:
     {}
@@ -39,9 +40,11 @@
   DefaultScriptInputs:
     - captionText: !<reference.Text> 00000000-0000-0000-0000-000000000000
       scaleObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      followTargetObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
   ScriptTypes:
     -
       {}
   InputLines:
     - // @input Component.Text captionText
     - // @input SceneObject scaleObj
+    - // @input SceneObject followTargetObj

@@ -3035,6 +3035,7 @@
     "":
       captionText: !<reference.Text> aaf497d9-bc5b-46ed-9873-c0cceaf05197
       scaleObj: !<reference.SceneObject> 622e33f2-3ad3-49a3-b34f-ce1b7b4f1f2f
+      followTargetObj: !<reference.SceneObject> 00000000-0000-0065-0000-000000000064
   ScriptTypes:
     "":
       {}
