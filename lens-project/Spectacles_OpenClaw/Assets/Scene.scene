@@ -657,7 +657,7 @@
   PrefabRemaps:
     []
   Name: Frame
-  Enabled: true
+  Enabled: false
   Layers: 1
   LocalTransform: !<TransformEntity>
     Position: {x: 0.000000, y: 0.000000, z: 0.400000}
@@ -2177,7 +2177,7 @@
     bottom: -1.850000
     right: 7.000000
     top: 1.850000
-  OverflowVertical: Truncate
+  OverflowVertical: Overflow
   OverflowHorizontal: Wrap
   Fill: !<TextFill>
     Mode: Solid
@@ -2977,7 +2977,8 @@
   Enabled: true
   ScriptAsset: !<reference> 682bae4b-823b-46ea-8938-4645322c33af
   ScriptInputsDefault:
-    {}
+    halfWidth: true
+    baseHalfHeight: true
   ScriptTypesDefault:
     {}
   ScriptInputs:
@@ -2985,6 +2986,10 @@
       captionText: !<reference.Text> aaf497d9-bc5b-46ed-9873-c0cceaf05197
       scaleObj: !<reference.SceneObject> 622e33f2-3ad3-49a3-b34f-ce1b7b4f1f2f
       followTargetObj: !<reference.SceneObject> 00000000-0000-0065-0000-000000000064
+      halfWidth: !<float> 7.000000
+      baseHalfHeight: 1.850000
+      padding: !<float> 1.000000
+      cornerRadius: !<float> 1.000000
   ScriptTypes:
     "":
       {}

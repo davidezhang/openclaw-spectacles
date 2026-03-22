@@ -26,8 +26,12 @@
   ExportUid: 00000000-0000-0000-0000-000000000000
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
+    baseHalfHeight: false
     captionText: false
+    cornerRadius: false
     followTargetObj: false
+    halfWidth: false
+    padding: false
     scaleObj: false
   ScriptTypesHidden:
     {}
@@ -41,6 +45,10 @@
     - captionText: !<reference.Text> 00000000-0000-0000-0000-000000000000
       scaleObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
       followTargetObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      halfWidth: !<float> 7.000000
+      baseHalfHeight: 1.850000
+      padding: 0.400000
+      cornerRadius: 0.500000
   ScriptTypes:
     -
       {}
@@ -48,3 +56,7 @@
     - // @input Component.Text captionText
     - // @input SceneObject scaleObj
     - // @input SceneObject followTargetObj
+    - // @input float halfWidth = 7
+    - // @input float baseHalfHeight = 1.85
+    - // @input float padding = 0.4
+    - // @input float cornerRadius = 0.5
