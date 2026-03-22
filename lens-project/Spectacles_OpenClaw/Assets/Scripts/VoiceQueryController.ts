@@ -37,10 +37,22 @@ export class VoiceQueryController extends BaseScriptComponent {
   private shrinkCancel: CancelSet = new CancelSet()
   private isWaitingForFinalTranscript: boolean = false
 
+  // Camera-follow state for staged image
+  private camTrans: Transform
+  private stagedFollowDistance: number = 60
+  private stagedFollowVerticalOffset: number = -15
+  private stagedFollowScale: vec3 | null = null
+
   // Scanner lock — suppresses ASR while two-hand crop is active
   isScannerActive: boolean = false
 
   onAwake() {
+    this.camTrans = this.editorCamObj.getTransform()
+
+    this.createEvent("UpdateEvent").bind(() => {
+      this.updateStagedFollow()
+    })
+
     if (!this.isEditor) {
       this.rightHand.onPinchDown.add(this.onRightPinchDown)
       this.rightHand.onPinchUp.add(this.onRightPinchUp)
@@ -65,6 +77,9 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.stagedCaptionPos = captionPos
     this.stagedCaptionRot = captionRot
 
+    // Capture the current scale so the follow loop preserves it
+    this.stagedFollowScale = anchorTrans.getWorldScale()
+
     print("Image staged — waiting for voice query (" + STAGING_TIMEOUT_SEC + "s)")
 
     // After STAGING_SHRINK_DELAY_SEC, animate the crop frame smaller
@@ -83,25 +98,35 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.stagingTimeoutEvent.reset(STAGING_TIMEOUT_SEC)
   }
 
+  private updateStagedFollow() {
+    if (!this.stagedAnchorTrans || !this.stagedFollowScale) return
+
+    const camPos = this.camTrans.getWorldPosition()
+    const camForward = this.camTrans.forward
+    const camUp = this.camTrans.up
+
+    this.stagedAnchorTrans.setWorldPosition(
+      camPos
+        .add(camForward.uniformScale(-this.stagedFollowDistance))
+        .add(camUp.uniformScale(this.stagedFollowVerticalOffset))
+    )
+    this.stagedAnchorTrans.setWorldRotation(quat.lookAt(camForward, vec3.up()))
+    this.stagedAnchorTrans.setWorldScale(this.stagedFollowScale)
+  }
+
   private animateShrink() {
-    if (!this.stagedAnchorTrans) return
+    if (!this.stagedAnchorTrans || !this.stagedFollowScale) return
     if (this.shrinkCancel) this.shrinkCancel.cancel()
 
-    const startScale = this.stagedAnchorTrans.getWorldScale()
+    const startScale = this.stagedFollowScale
     const targetScale = startScale.uniformScale(STAGING_SHRINK_SCALE)
-
-    // Move downward by ~15cm relative to current position
-    const startPos = this.stagedAnchorTrans.getWorldPosition()
-    const downOffset = vec3.up().uniformScale(-15)
-    const targetPos = startPos.add(downOffset)
 
     animate({
       easing: "ease-out-back",
       duration: 0.6,
       update: (t: number) => {
-        if (!this.stagedAnchorTrans) return
-        this.stagedAnchorTrans.setWorldScale(vec3.lerp(startScale, targetScale, t))
-        this.stagedAnchorTrans.setWorldPosition(vec3.lerp(startPos, targetPos, t))
+        if (!this.stagedFollowScale) return
+        this.stagedFollowScale = vec3.lerp(startScale, targetScale, t)
       },
       ended: null,
       cancelSet: this.shrinkCancel,
@@ -112,7 +137,6 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.stagedImageTex = null
     this.stagedCaptionPos = null
     this.stagedCaptionRot = null
-    this.stagedAnchorTrans = null
 
     if (this.shrinkCancel) this.shrinkCancel.cancel()
 
@@ -121,22 +145,28 @@ export class VoiceQueryController extends BaseScriptComponent {
       this.stagingTimeoutEvent = null
     }
 
-    if (destroy && this.stagedSceneObj) {
-      // Animate out before destroying
+    if (destroy && this.stagedSceneObj && this.stagedFollowScale) {
+      // Animate scale to zero while the follow loop keeps it in front of camera
       const obj = this.stagedSceneObj
-      const trans = obj.getTransform()
-      const startScale = trans.getWorldScale()
+      const startScale = this.stagedFollowScale
+      this.stagedSceneObj = null
+
       animate({
         easing: "ease-in-back",
         duration: 0.3,
         update: (t: number) => {
-          trans.setWorldScale(vec3.lerp(startScale, vec3.zero(), t))
+          if (!this.stagedFollowScale) return
+          this.stagedFollowScale = vec3.lerp(startScale, vec3.zero(), t)
         },
         ended: () => {
+          this.stagedAnchorTrans = null
+          this.stagedFollowScale = null
           obj.destroy()
         },
       })
-      this.stagedSceneObj = null
+    } else {
+      this.stagedAnchorTrans = null
+      this.stagedFollowScale = null
     }
   }
 
