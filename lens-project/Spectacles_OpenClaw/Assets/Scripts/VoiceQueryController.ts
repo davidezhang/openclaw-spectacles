@@ -13,6 +13,9 @@ export class VoiceQueryController extends BaseScriptComponent {
   @input agent: Agent
   @input caption: CaptionBehavior
   @input editorCamObj: SceneObject
+  @input
+  @allowUndefined
+  loadingObj: SceneObject
 
   private asrModule: AsrModule = require("LensStudio:AsrModule")
 
@@ -43,14 +46,26 @@ export class VoiceQueryController extends BaseScriptComponent {
   private stagedFollowVerticalOffset: number = -15
   private stagedFollowScale: vec3 | null = null
 
+  // Loading indicator state
+  private loadingTrans: Transform | null = null
+  private loadingFollowDistance: number = 60
+  private loadingFollowVerticalOffset: number = -10
+  private loadingScale: vec3 = new vec3(13, 10, 1)
+
   // Scanner lock — suppresses ASR while two-hand crop is active
   isScannerActive: boolean = false
 
   onAwake() {
     this.camTrans = this.editorCamObj.getTransform()
 
+    if (this.loadingObj) {
+      this.loadingTrans = this.loadingObj.getTransform()
+      this.loadingObj.enabled = false
+    }
+
     this.createEvent("UpdateEvent").bind(() => {
       this.updateStagedFollow()
+      this.updateLoadingFollow()
     })
 
     if (!this.isEditor) {
@@ -96,6 +111,40 @@ export class VoiceQueryController extends BaseScriptComponent {
       this.clearStagedImage(true)
     })
     this.stagingTimeoutEvent.reset(STAGING_TIMEOUT_SEC)
+  }
+
+  private updateLoadingFollow() {
+    if (!this.loadingObj || !this.loadingTrans) return
+    if (!this.loadingObj.enabled) return
+
+    this.positionLoading()
+  }
+
+  private positionLoading() {
+    if (!this.loadingTrans) return
+
+    const camPos = this.camTrans.getWorldPosition()
+    const camForward = this.camTrans.forward
+    const camUp = this.camTrans.up
+
+    this.loadingTrans.setWorldPosition(
+      camPos
+        .add(camForward.uniformScale(-this.loadingFollowDistance))
+        .add(camUp.uniformScale(this.loadingFollowVerticalOffset))
+    )
+    this.loadingTrans.setWorldRotation(quat.lookAt(camForward, vec3.up()))
+    this.loadingTrans.setWorldScale(this.loadingScale)
+  }
+
+  private showLoading() {
+    if (this.loadingObj) {
+      this.positionLoading()
+      this.loadingObj.enabled = true
+    }
+  }
+
+  private hideLoading() {
+    if (this.loadingObj) this.loadingObj.enabled = false
   }
 
   private updateStagedFollow() {
@@ -250,14 +299,17 @@ export class VoiceQueryController extends BaseScriptComponent {
 
     print("Sending query: " + query)
     this.updateCaption("Thinking...")
+    this.showLoading()
 
     if (this.stagedImageTex) {
       this.agent.sendImageWithQuery(this.stagedImageTex, query, (response) => {
+        this.hideLoading()
         this.updateCaption(response)
         this.clearStagedImage(true)
       })
     } else {
       this.agent.sendTextOnly(query, (response) => {
+        this.hideLoading()
         this.updateCaption(response)
       })
     }

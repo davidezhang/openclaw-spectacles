@@ -29,6 +29,7 @@
     agent: false
     caption: false
     editorCamObj: false
+    loadingObj: false
   ScriptTypesHidden:
     {}
   ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
@@ -41,6 +42,7 @@
     - agent: !<MappingBased.AssignableType> 00000000-0000-0000-0000-000000000000
       caption: !<MappingBased.AssignableType_1> 00000000-0000-0000-0000-000000000000
       editorCamObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      loadingObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
   ScriptTypes:
     -
       {}
@@ -48,3 +50,4 @@
     - // @input AssignableType agent
     - // @input AssignableType_1 caption
     - // @input SceneObject editorCamObj
+    - // @input SceneObject loadingObj
