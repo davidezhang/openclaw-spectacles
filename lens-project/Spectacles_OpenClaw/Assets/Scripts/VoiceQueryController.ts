@@ -7,6 +7,7 @@ const STAGING_TIMEOUT_SEC = 30
 const STAGING_SHRINK_DELAY_SEC = 2
 const STAGING_SHRINK_SCALE = 0.3
 const ASR_FINALIZATION_WAIT_SEC = 0.35
+const RESPONSE_TIMEOUT_SEC = 10
 
 @component
 export class VoiceQueryController extends BaseScriptComponent {
@@ -39,6 +40,7 @@ export class VoiceQueryController extends BaseScriptComponent {
   private pendingSendEvent: any = null
   private shrinkCancel: CancelSet = new CancelSet()
   private isWaitingForFinalTranscript: boolean = false
+  private responseTimeoutEvent: any = null
 
   // Camera-follow state for staged image
   private camTrans: Transform
@@ -266,6 +268,22 @@ export class VoiceQueryController extends BaseScriptComponent {
     return this.getCurrentCaptionPose()
   }
 
+  private scheduleResponseTimeout() {
+    this.clearResponseTimeout()
+    this.responseTimeoutEvent = this.createEvent("DelayedCallbackEvent")
+    this.responseTimeoutEvent.bind(() => {
+      this.caption.hide()
+    })
+    this.responseTimeoutEvent.reset(RESPONSE_TIMEOUT_SEC)
+  }
+
+  private clearResponseTimeout() {
+    if (this.responseTimeoutEvent) {
+      this.removeEvent(this.responseTimeoutEvent)
+      this.responseTimeoutEvent = null
+    }
+  }
+
   private updateCaption(text: string) {
     const pose = this.getCaptionPose()
     this.caption.setText(text, pose.pos, pose.rot)
@@ -305,12 +323,14 @@ export class VoiceQueryController extends BaseScriptComponent {
       this.agent.sendImageWithQuery(this.stagedImageTex, query, (response) => {
         this.hideLoading()
         this.updateCaption(response)
+        this.scheduleResponseTimeout()
         this.clearStagedImage(true)
       })
     } else {
       this.agent.sendTextOnly(query, (response) => {
         this.hideLoading()
         this.updateCaption(response)
+        this.scheduleResponseTimeout()
       })
     }
   }
@@ -321,6 +341,7 @@ export class VoiceQueryController extends BaseScriptComponent {
     }
 
     this.clearPendingSendEvent()
+    this.clearResponseTimeout()
     this.isWaitingForFinalTranscript = false
     this.isRecording = true
     this.transcript = ""
