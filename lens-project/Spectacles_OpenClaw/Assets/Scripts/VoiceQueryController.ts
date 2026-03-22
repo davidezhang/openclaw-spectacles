@@ -8,6 +8,7 @@ const STAGING_SHRINK_DELAY_SEC = 2
 const STAGING_SHRINK_SCALE = 0.3
 const ASR_FINALIZATION_WAIT_SEC = 0.35
 const RESPONSE_TIMEOUT_SEC = 10
+const MAX_CARDS = 20
 
 @component
 export class VoiceQueryController extends BaseScriptComponent {
@@ -40,7 +41,11 @@ export class VoiceQueryController extends BaseScriptComponent {
   private pendingSendEvent: any = null
   private shrinkCancel: CancelSet = new CancelSet()
   private isWaitingForFinalTranscript: boolean = false
-  private responseTimeoutEvent: any = null
+
+  // Dynamic caption card management
+  private activeCards: {obj: SceneObject; behavior: CaptionBehavior}[] = []
+  private queryCard: CaptionBehavior | null = null
+  private cardGap: number = 1
 
   // Camera-follow state for staged image
   private camTrans: Transform
@@ -268,25 +273,68 @@ export class VoiceQueryController extends BaseScriptComponent {
     return this.getCurrentCaptionPose()
   }
 
-  private scheduleResponseTimeout() {
-    this.clearResponseTimeout()
-    this.responseTimeoutEvent = this.createEvent("DelayedCallbackEvent")
-    this.responseTimeoutEvent.bind(() => {
-      this.caption.hide()
-    })
-    this.responseTimeoutEvent.reset(RESPONSE_TIMEOUT_SEC)
-  }
-
-  private clearResponseTimeout() {
-    if (this.responseTimeoutEvent) {
-      this.removeEvent(this.responseTimeoutEvent)
-      this.responseTimeoutEvent = null
+  private updateCaption(text: string) {
+    const pose = this.getCaptionPose()
+    if (this.queryCard) {
+      this.queryCard.setText(text, pose.pos, pose.rot)
     }
   }
 
-  private updateCaption(text: string) {
+  private spawnCard(text: string): CaptionBehavior {
+    if (this.activeCards.length >= MAX_CARDS) {
+      this.removeOldestCard()
+    }
+
+    const templateObj = this.caption.getSceneObject()
+    const parent = templateObj.getParent()
+    const clone = parent.copyWholeHierarchy(templateObj)
+
+    const behavior = clone.getComponent("Component.ScriptComponent") as CaptionBehavior
+
+    // Push existing cards up based on the bottom card's actual height
+    if (this.activeCards.length > 0) {
+      const bottomCard = this.activeCards[this.activeCards.length - 1].behavior
+      const shiftAmount = bottomCard.currentHalfHeight + this.caption.baseHalfHeight + this.cardGap
+      for (const card of this.activeCards) {
+        card.behavior.followVerticalOffset += shiftAmount
+      }
+    }
+
+    behavior.followVerticalOffset = this.caption.followVerticalOffset
+    behavior.onSizeChanged = () => this.repositionCards()
+
+    this.activeCards.push({obj: clone, behavior})
+
     const pose = this.getCaptionPose()
-    this.caption.setText(text, pose.pos, pose.rot)
+    behavior.setText(text, pose.pos, pose.rot)
+
+    return behavior
+  }
+
+  private removeOldestCard() {
+    if (this.activeCards.length === 0) return
+    const oldest = this.activeCards.shift()!
+    const obj = oldest.obj
+    oldest.behavior.onSizeChanged = null
+    oldest.behavior.onHidden = () => {
+      obj.destroy()
+    }
+    oldest.behavior.hide()
+  }
+
+  private repositionCards() {
+    const baseOffset = this.caption.followVerticalOffset
+    for (let i = this.activeCards.length - 1; i >= 0; i--) {
+      if (i === this.activeCards.length - 1) {
+        // Bottom card stays at center
+        this.activeCards[i].behavior.followVerticalOffset = baseOffset
+      } else {
+        // Stack above the card below
+        const below = this.activeCards[i + 1].behavior
+        this.activeCards[i].behavior.followVerticalOffset =
+          below.followVerticalOffset + below.currentHalfHeight + this.activeCards[i].behavior.currentHalfHeight + this.cardGap
+      }
+    }
   }
 
   private clearPendingSendEvent() {
@@ -307,30 +355,26 @@ export class VoiceQueryController extends BaseScriptComponent {
     if (!query) {
       print("No speech detected")
       this.updateCaption("No speech detected")
-      const clearEvent = this.createEvent("DelayedCallbackEvent")
-      clearEvent.bind(() => {
-        this.caption.hide()
-      })
-      clearEvent.reset(2)
       return
     }
 
     print("Sending query: " + query)
-    this.updateCaption("Thinking...")
+    this.updateCaption(query)
+    const responseCard = this.spawnCard("Thinking...")
     this.showLoading()
 
     if (this.stagedImageTex) {
       this.agent.sendImageWithQuery(this.stagedImageTex, query, (response) => {
         this.hideLoading()
-        this.updateCaption(response)
-        this.scheduleResponseTimeout()
+        const pose = this.getCaptionPose()
+        responseCard.setText(response, pose.pos, pose.rot)
         this.clearStagedImage(true)
       })
     } else {
       this.agent.sendTextOnly(query, (response) => {
         this.hideLoading()
-        this.updateCaption(response)
-        this.scheduleResponseTimeout()
+        const pose = this.getCaptionPose()
+        responseCard.setText(response, pose.pos, pose.rot)
       })
     }
   }
@@ -340,12 +384,11 @@ export class VoiceQueryController extends BaseScriptComponent {
     // automatically cancels any active session.
 
     this.clearPendingSendEvent()
-    this.clearResponseTimeout()
     this.isWaitingForFinalTranscript = false
     this.isRecording = true
     this.transcript = ""
     this.lockCaptionPose()
-    this.updateCaption("Listening...")
+    this.queryCard = this.spawnCard("Listening...")
 
     const options = AsrModule.AsrTranscriptionOptions.create()
     options.mode = AsrModule.AsrMode.HighAccuracy
@@ -393,12 +436,16 @@ export class VoiceQueryController extends BaseScriptComponent {
 
   // Caption at a default position (for text-only queries without a crop region)
   private showCaptionDefault(text: string) {
-    this.updateCaption(text)
+    if (!this.queryCard) {
+      this.queryCard = this.spawnCard(text)
+    } else {
+      this.updateCaption(text)
+    }
   }
 
   // Public helper for editor auto-send path
   showResponse(text: string) {
-    this.showCaptionDefault(text)
+    this.spawnCard(text)
   }
 
   private getDefaultPos(): vec3 {

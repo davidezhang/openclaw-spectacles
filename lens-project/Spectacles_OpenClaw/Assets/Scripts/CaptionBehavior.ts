@@ -13,12 +13,15 @@ export class CaptionBehavior extends BaseScriptComponent {
   private startPos: vec3
   private followTarget: Transform | null = null
   private followDistance: number = 60
-  private followVerticalOffset: number = -8
+  @input followVerticalOffset: number = -8
   private updateEvent: SceneEvent | null = null
 
   private scaleCancel: CancelSet = new CancelSet()
 
   private isVisible: boolean = false
+
+  onHidden: (() => void) | null = null
+  onSizeChanged: (() => void) | null = null
 
   // Auto-resize tile background
   @input halfWidth: number = 7
@@ -29,6 +32,7 @@ export class CaptionBehavior extends BaseScriptComponent {
   private tileVisual: RenderMeshVisual | null = null
   private meshBuilder: MeshBuilder | null = null
   private needsSizeUpdate: boolean = false
+  currentHalfHeight: number = 1.85
 
   onAwake() {
     this.trans = this.getSceneObject().getTransform()
@@ -121,6 +125,8 @@ export class CaptionBehavior extends BaseScriptComponent {
       textHeight / 2 + this.padding
     )
 
+    this.currentHalfHeight = neededHalfHeight
+
     // Expand text layout rect to fit content
     this.captionText.worldSpaceRect = Rect.create(
       -this.halfWidth, this.halfWidth,
@@ -130,6 +136,8 @@ export class CaptionBehavior extends BaseScriptComponent {
     // Rebuild background mesh to match
     this.buildRoundedRectMesh(this.halfWidth, neededHalfHeight)
     this.meshBuilder.updateMesh()
+
+    if (this.onSizeChanged) this.onSizeChanged()
   }
 
   private resetTileSize() {
@@ -215,6 +223,7 @@ export class CaptionBehavior extends BaseScriptComponent {
       ended: () => {
         this.captionText.text = ""
         this.resetTileSize()
+        if (this.onHidden) this.onHidden()
       },
       cancelSet: this.scaleCancel
     })

@@ -210,6 +210,7 @@
   ScriptAsset: !<reference> 682bae4b-823b-46ea-8938-4645322c33af
   ScriptInputsDefault:
     followTargetObj: true
+    followVerticalOffset: true
     halfWidth: true
     baseHalfHeight: true
     padding: true
@@ -221,6 +222,7 @@
       captionText: !<reference.Text> 890de5e6-20c2-43e6-8732-0b9f5c775584
       scaleObj: !<reference.SceneObject> 45b91d7c-ceb0-439a-a8ec-4e9921ddfb6f
       followTargetObj: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      followVerticalOffset: !<float> -8.000000
       halfWidth: !<float> 7.000000
       baseHalfHeight: 1.850000
       padding: 0.400000
