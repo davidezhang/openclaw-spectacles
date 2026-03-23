@@ -8,6 +8,9 @@ const STAGING_SHRINK_DELAY_SEC = 2
 const STAGING_SHRINK_SCALE = 0.3
 const ASR_FINALIZATION_WAIT_SEC = 0.35
 const RESPONSE_TIMEOUT_SEC = 10
+const LISTENING_IMAGE_SCALE_FACTOR = 0.6
+const LISTENING_IMAGE_GAP = 1.5
+const RECORDING_DEBOUNCE_SEC = 0.1
 
 @component
 export class VoiceQueryController extends BaseScriptComponent {
@@ -39,8 +42,12 @@ export class VoiceQueryController extends BaseScriptComponent {
   private stagingTimeoutEvent: any = null
   private pendingSendEvent: any = null
   private shrinkCancel: CancelSet = new CancelSet()
+  private listeningScaleCancel: CancelSet = new CancelSet()
   private isWaitingForFinalTranscript: boolean = false
   private responseTimeoutEvent: any = null
+  private stagedOriginalScale: vec3 | null = null
+  private showImageAboveCaption: boolean = false
+  private recordingDebounceEvent: any = null
 
   // Camera-follow state for staged image
   private camTrans: Transform
@@ -73,6 +80,7 @@ export class VoiceQueryController extends BaseScriptComponent {
     if (!this.isEditor) {
       this.rightHand.onPinchDown.add(this.onRightPinchDown)
       this.rightHand.onPinchUp.add(this.onRightPinchUp)
+      this.leftHand.onPinchDown.add(this.onLeftPinchDown)
     }
   }
 
@@ -96,6 +104,7 @@ export class VoiceQueryController extends BaseScriptComponent {
 
     // Capture the current scale so the follow loop preserves it
     this.stagedFollowScale = anchorTrans.getWorldScale()
+    this.stagedOriginalScale = anchorTrans.getWorldScale()
 
     print("Image staged — waiting for voice query (" + STAGING_TIMEOUT_SEC + "s)")
 
@@ -155,11 +164,25 @@ export class VoiceQueryController extends BaseScriptComponent {
     const camPos = this.camTrans.getWorldPosition()
     const camForward = this.camTrans.forward
     const camUp = this.camTrans.up
+    const camRight = camUp.cross(camForward).normalize()
+
+    let verticalOffset = this.stagedFollowVerticalOffset
+    if (this.showImageAboveCaption) {
+      const captionWorldHalfHeight = this.caption.getWorldHalfHeight()
+      const imageHalfHeight = this.stagedFollowScale.y / 2
+      verticalOffset = this.caption.getFollowVerticalOffset()
+        + captionWorldHalfHeight + LISTENING_IMAGE_GAP + imageHalfHeight
+    }
+
+    // The anchor pivot is not at the mesh center — offset horizontally
+    // so the image appears centered in view.
+    const halfW = this.stagedFollowScale.x / 2
 
     this.stagedAnchorTrans.setWorldPosition(
       camPos
         .add(camForward.uniformScale(-this.stagedFollowDistance))
-        .add(camUp.uniformScale(this.stagedFollowVerticalOffset))
+        .add(camUp.uniformScale(verticalOffset))
+        .add(camRight.uniformScale(halfW))
     )
     this.stagedAnchorTrans.setWorldRotation(quat.lookAt(camForward, vec3.up()))
     this.stagedAnchorTrans.setWorldScale(this.stagedFollowScale)
@@ -184,12 +207,52 @@ export class VoiceQueryController extends BaseScriptComponent {
     })
   }
 
+  private animateToListeningScale() {
+    if (!this.stagedOriginalScale || !this.stagedFollowScale) return
+    this.shrinkCancel.cancel()
+    this.listeningScaleCancel.cancel()
+
+    const startScale = this.stagedFollowScale
+    const targetScale = this.stagedOriginalScale.uniformScale(LISTENING_IMAGE_SCALE_FACTOR)
+
+    animate({
+      easing: "ease-out-back",
+      duration: 0.4,
+      update: (t: number) => {
+        if (!this.stagedFollowScale) return
+        this.stagedFollowScale = vec3.lerp(startScale, targetScale, t)
+      },
+      ended: null,
+      cancelSet: this.listeningScaleCancel,
+    })
+  }
+
+  private animateBackToShrink() {
+    if (!this.stagedOriginalScale || !this.stagedFollowScale) return
+    this.listeningScaleCancel.cancel()
+
+    const startScale = this.stagedFollowScale
+    const targetScale = this.stagedOriginalScale.uniformScale(STAGING_SHRINK_SCALE)
+
+    animate({
+      easing: "ease-out-back",
+      duration: 0.4,
+      update: (t: number) => {
+        if (!this.stagedFollowScale) return
+        this.stagedFollowScale = vec3.lerp(startScale, targetScale, t)
+      },
+      ended: null,
+      cancelSet: this.shrinkCancel,
+    })
+  }
+
   private clearStagedImage(destroy: boolean) {
     this.stagedImageTex = null
     this.stagedCaptionPos = null
     this.stagedCaptionRot = null
 
     if (this.shrinkCancel) this.shrinkCancel.cancel()
+    this.listeningScaleCancel.cancel()
 
     if (this.stagingTimeoutEvent) {
       this.removeEvent(this.stagingTimeoutEvent)
@@ -212,12 +275,16 @@ export class VoiceQueryController extends BaseScriptComponent {
         ended: () => {
           this.stagedAnchorTrans = null
           this.stagedFollowScale = null
+          this.stagedOriginalScale = null
+          this.showImageAboveCaption = false
           obj.destroy()
         },
       })
     } else {
       this.stagedAnchorTrans = null
       this.stagedFollowScale = null
+      this.stagedOriginalScale = null
+      this.showImageAboveCaption = false
     }
   }
 
@@ -229,12 +296,45 @@ export class VoiceQueryController extends BaseScriptComponent {
     if (this.isScannerActive) return
     if (this.leftHand.isPinching()) return
 
-    this.startRecording()
+    // Debounce: wait briefly to see if left hand also pinches (two-hand crop)
+    this.clearRecordingDebounce()
+    this.recordingDebounceEvent = this.createEvent("DelayedCallbackEvent")
+    this.recordingDebounceEvent.bind(() => {
+      this.recordingDebounceEvent = null
+      // Re-check: left hand may have pinched during the debounce window
+      if (this.isScannerActive) return
+      if (this.leftHand.isPinching()) return
+      if (!this.rightHand.isPinching()) return
+      this.startRecording()
+    })
+    this.recordingDebounceEvent.reset(RECORDING_DEBOUNCE_SEC)
   }
 
   private onRightPinchUp = () => {
+    this.clearRecordingDebounce()
     if (!this.isRecording) return
     this.stopRecordingAndSend()
+  }
+
+  private onLeftPinchDown = () => {
+    // Only cancel if this is actually a two-hand crop gesture
+    // (both thumbs close together), not random hand-tracking jitter.
+    const thumbDist = this.leftHand.thumbTip.position.distance(
+      this.rightHand.thumbTip.position
+    )
+    if (thumbDist > 10) return
+
+    this.clearRecordingDebounce()
+    if (this.isRecording) {
+      this.cancelRecording()
+    }
+  }
+
+  private clearRecordingDebounce() {
+    if (this.recordingDebounceEvent) {
+      this.removeEvent(this.recordingDebounceEvent)
+      this.recordingDebounceEvent = null
+    }
   }
 
   private getCurrentCaptionPose(): {pos: vec3; rot: quat} {
@@ -307,6 +407,10 @@ export class VoiceQueryController extends BaseScriptComponent {
     if (!query) {
       print("No speech detected")
       this.updateCaption("No speech detected")
+      if (this.showImageAboveCaption) {
+        this.showImageAboveCaption = false
+        this.animateBackToShrink()
+      }
       const clearEvent = this.createEvent("DelayedCallbackEvent")
       clearEvent.bind(() => {
         this.caption.hide()
@@ -346,6 +450,11 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.transcript = ""
     this.lockCaptionPose()
     this.updateCaption("Listening...")
+
+    if (this.stagedImageTex) {
+      this.showImageAboveCaption = true
+      this.animateToListeningScale()
+    }
 
     const options = AsrModule.AsrTranscriptionOptions.create()
     options.mode = AsrModule.AsrMode.HighAccuracy
@@ -389,6 +498,18 @@ export class VoiceQueryController extends BaseScriptComponent {
       this.finalizeStoppedRecording()
     })
     this.pendingSendEvent.reset(ASR_FINALIZATION_WAIT_SEC)
+  }
+
+  private cancelRecording() {
+    this.isRecording = false
+    this.isWaitingForFinalTranscript = false
+    this.asrModule.stopTranscribing().catch(() => {})
+    this.clearPendingSendEvent()
+    this.caption.hide()
+    if (this.showImageAboveCaption) {
+      this.showImageAboveCaption = false
+      this.animateBackToShrink()
+    }
   }
 
   // Caption at a default position (for text-only queries without a crop region)

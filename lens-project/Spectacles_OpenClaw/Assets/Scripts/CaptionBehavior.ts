@@ -29,6 +29,7 @@ export class CaptionBehavior extends BaseScriptComponent {
   private tileVisual: RenderMeshVisual | null = null
   private meshBuilder: MeshBuilder | null = null
   private needsSizeUpdate: boolean = false
+  private currentHalfHeight: number = 0
 
   onAwake() {
     this.trans = this.getSceneObject().getTransform()
@@ -37,6 +38,7 @@ export class CaptionBehavior extends BaseScriptComponent {
     this.followTarget = this.followTargetObj ? this.followTargetObj.getTransform() : null
 
     this.setupTileMesh()
+    this.currentHalfHeight = this.baseHalfHeight
 
     this.updateEvent = this.createEvent("UpdateEvent")
     this.updateEvent.bind(() => {
@@ -120,6 +122,7 @@ export class CaptionBehavior extends BaseScriptComponent {
       this.baseHalfHeight,
       textHeight / 2 + this.padding
     )
+    this.currentHalfHeight = neededHalfHeight
 
     // Expand text layout rect to fit content
     this.captionText.worldSpaceRect = Rect.create(
@@ -134,6 +137,7 @@ export class CaptionBehavior extends BaseScriptComponent {
 
   private resetTileSize() {
     if (!this.meshBuilder || !this.tileVisual) return
+    this.currentHalfHeight = this.baseHalfHeight
     this.captionText.worldSpaceRect = Rect.create(
       -this.halfWidth, this.halfWidth,
       -this.baseHalfHeight, this.baseHalfHeight
@@ -218,5 +222,15 @@ export class CaptionBehavior extends BaseScriptComponent {
       },
       cancelSet: this.scaleCancel
     })
+  }
+
+  getWorldHalfHeight(): number {
+    const scaleY = this.scaleTrans.getLocalScale().y
+    const parentScaleY = this.trans.getWorldScale().y
+    return this.currentHalfHeight * scaleY * parentScaleY
+  }
+
+  getFollowVerticalOffset(): number {
+    return this.followVerticalOffset
   }
 }
