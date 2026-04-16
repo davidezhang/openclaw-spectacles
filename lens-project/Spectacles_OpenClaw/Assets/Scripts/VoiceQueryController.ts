@@ -6,7 +6,8 @@ import {CaptionBehavior} from "./CaptionBehavior"
 const STAGING_TIMEOUT_SEC = 30
 const STAGING_SHRINK_DELAY_SEC = 2
 const STAGING_SHRINK_SCALE = 0.3
-const ASR_FINALIZATION_WAIT_SEC = 0.35
+const ASR_FINALIZATION_WAIT_SEC = 2.35
+const ASR_PROCESSING_HINT_DELAY_SEC = 0.45
 const RESPONSE_TIMEOUT_SEC = 10
 const LISTENING_IMAGE_SCALE_FACTOR = 0.6
 const LISTENING_IMAGE_GAP = 1.5
@@ -29,6 +30,7 @@ export class VoiceQueryController extends BaseScriptComponent {
   private leftHand = SIK.HandInputData.getHand("left")
 
   private transcript: string = ""
+  private lastNonEmptyTranscript: string = ""
   private isRecording: boolean = false
 
   // Staging state
@@ -41,6 +43,7 @@ export class VoiceQueryController extends BaseScriptComponent {
   private activeCaptionRot: quat | null = null
   private stagingTimeoutEvent: any = null
   private pendingSendEvent: any = null
+  private processingHintEvent: any = null
   private shrinkCancel: CancelSet = new CancelSet()
   private listeningScaleCancel: CancelSet = new CancelSet()
   private isWaitingForFinalTranscript: boolean = false
@@ -295,6 +298,7 @@ export class VoiceQueryController extends BaseScriptComponent {
     // or if left hand is also pinching (would be a crop gesture)
     if (this.isScannerActive) return
     if (this.leftHand.isPinching()) return
+    if (this.isRecording || this.isWaitingForFinalTranscript) return
 
     // Debounce: wait briefly to see if left hand also pinches (two-hand crop)
     this.clearRecordingDebounce()
@@ -396,13 +400,21 @@ export class VoiceQueryController extends BaseScriptComponent {
     }
   }
 
+  private clearProcessingHintEvent() {
+    if (this.processingHintEvent) {
+      this.removeEvent(this.processingHintEvent)
+      this.processingHintEvent = null
+    }
+  }
+
   private finalizeStoppedRecording() {
     if (!this.isWaitingForFinalTranscript) return
 
     this.isWaitingForFinalTranscript = false
     this.clearPendingSendEvent()
+    this.clearProcessingHintEvent()
 
-    const query = this.transcript.trim()
+    const query = this.getResolvedTranscript()
 
     if (!query) {
       print("No speech detected")
@@ -439,6 +451,15 @@ export class VoiceQueryController extends BaseScriptComponent {
     }
   }
 
+  private getResolvedTranscript(): string {
+    const currentTranscript = this.transcript.trim()
+    if (currentTranscript.length > 0) {
+      return currentTranscript
+    }
+
+    return this.lastNonEmptyTranscript.trim()
+  }
+
   private startRecording() {
     // No need to call stopTranscribing() — startTranscribing()
     // automatically cancels any active session.
@@ -448,6 +469,7 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.isWaitingForFinalTranscript = false
     this.isRecording = true
     this.transcript = ""
+    this.lastNonEmptyTranscript = ""
     this.lockCaptionPose()
     this.updateCaption("Listening...")
 
@@ -456,17 +478,26 @@ export class VoiceQueryController extends BaseScriptComponent {
       this.animateToListeningScale()
     }
 
+    print("ASR started — listening...")
+
     const options = AsrModule.AsrTranscriptionOptions.create()
     options.mode = AsrModule.AsrMode.HighAccuracy
     options.silenceUntilTerminationMs = 2000
 
     options.onTranscriptionUpdateEvent.add(
       (eventArgs: AsrModule.TranscriptionUpdateEvent) => {
-        this.transcript = eventArgs.text
-        const displayText = eventArgs.isFinal ? eventArgs.text : eventArgs.text + "..."
-        this.updateCaption(displayText)
+        this.transcript = eventArgs.text || ""
+
+        const trimmedTranscript = this.transcript.trim()
+        if (trimmedTranscript.length > 0) {
+          this.clearProcessingHintEvent()
+          this.lastNonEmptyTranscript = this.transcript
+          const displayText = eventArgs.isFinal ? this.transcript : this.transcript + "..."
+          this.updateCaption(displayText)
+        }
 
         if (eventArgs.isFinal && this.isWaitingForFinalTranscript) {
+          print("ASR final transcript received after release")
           this.finalizeStoppedRecording()
         }
       }
@@ -490,11 +521,25 @@ export class VoiceQueryController extends BaseScriptComponent {
   private stopRecordingAndSend() {
     this.isRecording = false
     this.isWaitingForFinalTranscript = true
-    this.asrModule.stopTranscribing().catch(() => {})
+    print("Pinch released — waiting for ASR finalization")
+
+    if (!this.getResolvedTranscript()) {
+      this.clearProcessingHintEvent()
+      this.processingHintEvent = this.createEvent("DelayedCallbackEvent")
+      this.processingHintEvent.bind(() => {
+        this.processingHintEvent = null
+        if (!this.isWaitingForFinalTranscript) return
+        if (this.getResolvedTranscript()) return
+        this.updateCaption("Processing speech...")
+      })
+      this.processingHintEvent.reset(ASR_PROCESSING_HINT_DELAY_SEC)
+    }
 
     this.clearPendingSendEvent()
     this.pendingSendEvent = this.createEvent("DelayedCallbackEvent")
     this.pendingSendEvent.bind(() => {
+      print("ASR finalization timeout — using best available transcript")
+      this.asrModule.stopTranscribing().catch(() => {})
       this.finalizeStoppedRecording()
     })
     this.pendingSendEvent.reset(ASR_FINALIZATION_WAIT_SEC)
@@ -505,6 +550,7 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.isWaitingForFinalTranscript = false
     this.asrModule.stopTranscribing().catch(() => {})
     this.clearPendingSendEvent()
+    this.clearProcessingHintEvent()
     this.caption.hide()
     if (this.showImageAboveCaption) {
       this.showImageAboveCaption = false
