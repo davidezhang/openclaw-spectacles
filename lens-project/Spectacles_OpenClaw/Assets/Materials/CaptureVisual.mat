@@ -217,6 +217,9 @@
     - Tweak_N8:
         typeIdx: 3
         value: {x: 1.000000, y: 1.000000}
+    - alphaTestThreshold:
+        typeIdx: 1
+        value: 0.100000
     - captureImageBorderColor:
         typeIdx: 5
         value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
@@ -253,7 +256,7 @@
     - overrideTimeEnabled:
         typeIdx: 0
         value: 0
-  DepthWrite: true
+  DepthWrite: false
   DepthTest: true
   DepthFunction: LessEqual
   TwoSided: false
@@ -265,7 +268,7 @@
   InstanceCount: 1
   Defines:
     []
-  BlendMode: AlphaTest
+  BlendMode: PremultipliedAlphaAuto
   Properties:
     OpacityTexture:
       typeIdx: 9
@@ -288,9 +291,6 @@
     PreviewEnabled:
       typeIdx: 0
       value: 0
-    alphaTestThreshold:
-      typeIdx: 1
-      value: 0.100000
     captureImage:
       typeIdx: 9
       value:
