@@ -2170,8 +2170,8 @@
   ShowEditingPreview: true
   TouchHandler: !<reference> 00000000-0000-0000-0000-000000000000
   SizeToFit: false
-  FontSize: 55
-  Font: !<reference> 1d37f555-027b-4350-be26-ce8756e24840
+  FontSize: 60
+  Font: !<reference> 3dae92f3-362a-42c6-9bb1-1210f9f2f7b8
   LayoutRect:
     left: -7.000000
     bottom: -1.850000
@@ -2181,7 +2181,7 @@
   OverflowHorizontal: Wrap
   Fill: !<TextFill>
     Mode: Solid
-    Color: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    Color: {x: 1.000000, y: 0.929641, z: 0.232410, w: 1.000000}
     Texture: !<reference> 00000000-0000-0000-0000-000000000000
     ColorTint: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
     TileCount: 5.000000
@@ -2758,7 +2758,7 @@
   PrefabRemaps:
     []
   Name: component_3
-  Enabled: true
+  Enabled: false
   RenderOrder: 1
   StretchMode: Stretch
   VerticalAlignment: Center
