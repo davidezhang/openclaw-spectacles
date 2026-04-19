@@ -10,8 +10,18 @@ const ASR_FINALIZATION_WAIT_SEC = 2.35
 const ASR_PROCESSING_HINT_DELAY_SEC = 0.45
 const RESPONSE_TIMEOUT_SEC = 10
 const LISTENING_IMAGE_SCALE_FACTOR = 0.6
-const LISTENING_IMAGE_GAP = 1.5
 const RECORDING_DEBOUNCE_SEC = 0.1
+const STAGED_IMAGE_GAP = 1.0
+
+interface StagedImage {
+  tex: Texture
+  sceneObj: SceneObject | null
+  anchorTrans: Transform
+  followScale: vec3
+  originalScale: vec3
+  shrinkCancel: CancelSet
+  timeoutEvent: any
+}
 
 @component
 export class VoiceQueryController extends BaseScriptComponent {
@@ -33,30 +43,22 @@ export class VoiceQueryController extends BaseScriptComponent {
   private lastNonEmptyTranscript: string = ""
   private isRecording: boolean = false
 
-  // Staging state
-  private stagedImageTex: Texture | null = null
-  private stagedSceneObj: SceneObject | null = null
-  private stagedAnchorTrans: Transform | null = null
-  private stagedCaptionPos: vec3 | null = null
-  private stagedCaptionRot: quat | null = null
+  // Staging state — multiple images in a horizontal tray
+  private stagedImages: StagedImage[] = []
+  private activeQueryIndex: number = -1
   private activeCaptionPos: vec3 | null = null
   private activeCaptionRot: quat | null = null
-  private stagingTimeoutEvent: any = null
   private pendingSendEvent: any = null
   private processingHintEvent: any = null
-  private shrinkCancel: CancelSet = new CancelSet()
   private listeningScaleCancel: CancelSet = new CancelSet()
   private isWaitingForFinalTranscript: boolean = false
   private responseTimeoutEvent: any = null
-  private stagedOriginalScale: vec3 | null = null
-  private showImageAboveCaption: boolean = false
   private recordingDebounceEvent: any = null
 
-  // Camera-follow state for staged image
+  // Camera-follow state for staged image tray
   private camTrans: Transform
   private stagedFollowDistance: number = 60
   private stagedFollowVerticalOffset: number = -15
-  private stagedFollowScale: vec3 | null = null
 
   // Loading indicator state
   private loadingTrans: Transform | null = null
@@ -93,38 +95,39 @@ export class VoiceQueryController extends BaseScriptComponent {
     imageTex: Texture,
     sceneObj: SceneObject,
     anchorTrans: Transform,
-    captionPos: vec3,
-    captionRot: quat
+    _captionPos: vec3,
+    _captionRot: quat
   ) {
-    // If an image is already staged, clear it first
-    this.clearStagedImage(false)
+    const entry: StagedImage = {
+      tex: imageTex,
+      sceneObj: sceneObj,
+      anchorTrans: anchorTrans,
+      followScale: anchorTrans.getWorldScale(),
+      originalScale: anchorTrans.getWorldScale(),
+      shrinkCancel: new CancelSet(),
+      timeoutEvent: null,
+    }
 
-    this.stagedImageTex = imageTex
-    this.stagedSceneObj = sceneObj
-    this.stagedAnchorTrans = anchorTrans
-    this.stagedCaptionPos = captionPos
-    this.stagedCaptionRot = captionRot
+    this.stagedImages.push(entry)
+    const count = this.stagedImages.length
 
-    // Capture the current scale so the follow loop preserves it
-    this.stagedFollowScale = anchorTrans.getWorldScale()
-    this.stagedOriginalScale = anchorTrans.getWorldScale()
-
-    print("Image staged — waiting for voice query (" + STAGING_TIMEOUT_SEC + "s)")
+    print("Image staged (" + count + " total) — waiting for voice query (" + STAGING_TIMEOUT_SEC + "s)")
 
     // After STAGING_SHRINK_DELAY_SEC, animate the crop frame smaller
     const shrinkEvent = this.createEvent("DelayedCallbackEvent")
     shrinkEvent.bind(() => {
-      this.animateShrink()
+      this.animateShrinkFor(entry)
     })
     shrinkEvent.reset(STAGING_SHRINK_DELAY_SEC)
 
-    // After STAGING_TIMEOUT_SEC, discard the staged image
-    this.stagingTimeoutEvent = this.createEvent("DelayedCallbackEvent")
-    this.stagingTimeoutEvent.bind(() => {
+    // After STAGING_TIMEOUT_SEC, discard this staged image
+    entry.timeoutEvent = this.createEvent("DelayedCallbackEvent")
+    entry.timeoutEvent.bind(() => {
       print("Staging timeout — discarding staged image")
-      this.clearStagedImage(true)
+      const currentIdx = this.stagedImages.indexOf(entry)
+      if (currentIdx >= 0) this.removeStagedImage(currentIdx, true)
     })
-    this.stagingTimeoutEvent.reset(STAGING_TIMEOUT_SEC)
+    entry.timeoutEvent.reset(STAGING_TIMEOUT_SEC)
   }
 
   private updateLoadingFollow() {
@@ -162,132 +165,147 @@ export class VoiceQueryController extends BaseScriptComponent {
   }
 
   private updateStagedFollow() {
-    if (!this.stagedAnchorTrans || !this.stagedFollowScale) return
+    if (this.stagedImages.length === 0) return
 
     const camPos = this.camTrans.getWorldPosition()
     const camForward = this.camTrans.forward
     const camUp = this.camTrans.up
     const camRight = camUp.cross(camForward).normalize()
 
-    let verticalOffset = this.stagedFollowVerticalOffset
-    if (this.showImageAboveCaption) {
-      const captionWorldHalfHeight = this.caption.getWorldHalfHeight()
-      const imageHalfHeight = this.stagedFollowScale.y / 2
-      verticalOffset = this.caption.getFollowVerticalOffset()
-        + captionWorldHalfHeight + LISTENING_IMAGE_GAP + imageHalfHeight
+    const verticalOffset = this.stagedFollowVerticalOffset
+
+    // Compute total width of the horizontal tray
+    let totalWidth = 0
+    for (const img of this.stagedImages) {
+      totalWidth += img.followScale.x
     }
+    totalWidth += STAGED_IMAGE_GAP * Math.max(0, this.stagedImages.length - 1)
 
-    // The anchor pivot is not at the mesh center — offset horizontally
-    // so the image appears centered in view.
-    const halfW = this.stagedFollowScale.x / 2
+    const basePos = camPos
+      .add(camForward.uniformScale(-this.stagedFollowDistance))
+      .add(camUp.uniformScale(verticalOffset))
 
-    this.stagedAnchorTrans.setWorldPosition(
-      camPos
-        .add(camForward.uniformScale(-this.stagedFollowDistance))
-        .add(camUp.uniformScale(verticalOffset))
-        .add(camRight.uniformScale(halfW))
-    )
-    this.stagedAnchorTrans.setWorldRotation(quat.lookAt(camForward, vec3.up()))
-    this.stagedAnchorTrans.setWorldScale(this.stagedFollowScale)
+    const faceRot = quat.lookAt(camForward, vec3.up())
+
+    // Lay out images horizontally, centered on camera forward
+    let cursor = 0
+    for (const img of this.stagedImages) {
+      const halfW = img.followScale.x / 2
+      const centerX = -totalWidth / 2 + cursor + halfW
+      // Anchor pivot is at the right edge — shift right by halfW
+      const anchorX = centerX + halfW
+
+      img.anchorTrans.setWorldPosition(
+        basePos.add(camRight.uniformScale(anchorX))
+      )
+      img.anchorTrans.setWorldRotation(faceRot)
+      img.anchorTrans.setWorldScale(img.followScale)
+
+      cursor += img.followScale.x + STAGED_IMAGE_GAP
+    }
   }
 
-  private animateShrink() {
-    if (!this.stagedAnchorTrans || !this.stagedFollowScale) return
-    if (this.shrinkCancel) this.shrinkCancel.cancel()
+  private animateShrinkFor(img: StagedImage) {
+    img.shrinkCancel.cancel()
 
-    const startScale = this.stagedFollowScale
+    const startScale = img.followScale
     const targetScale = startScale.uniformScale(STAGING_SHRINK_SCALE)
 
     animate({
       easing: "ease-out-back",
       duration: 0.6,
       update: (t: number) => {
-        if (!this.stagedFollowScale) return
-        this.stagedFollowScale = vec3.lerp(startScale, targetScale, t)
+        img.followScale = vec3.lerp(startScale, targetScale, t)
       },
       ended: null,
-      cancelSet: this.shrinkCancel,
+      cancelSet: img.shrinkCancel,
     })
   }
 
-  private animateToListeningScale() {
-    if (!this.stagedOriginalScale || !this.stagedFollowScale) return
-    this.shrinkCancel.cancel()
+  private animateToListeningScaleFor(img: StagedImage) {
+    img.shrinkCancel.cancel()
     this.listeningScaleCancel.cancel()
 
-    const startScale = this.stagedFollowScale
-    const targetScale = this.stagedOriginalScale.uniformScale(LISTENING_IMAGE_SCALE_FACTOR)
+    const startScale = img.followScale
+    const targetScale = img.originalScale.uniformScale(LISTENING_IMAGE_SCALE_FACTOR)
 
     animate({
       easing: "ease-out-back",
       duration: 0.4,
       update: (t: number) => {
-        if (!this.stagedFollowScale) return
-        this.stagedFollowScale = vec3.lerp(startScale, targetScale, t)
+        img.followScale = vec3.lerp(startScale, targetScale, t)
       },
       ended: null,
       cancelSet: this.listeningScaleCancel,
     })
   }
 
-  private animateBackToShrink() {
-    if (!this.stagedOriginalScale || !this.stagedFollowScale) return
+  private animateBackToShrinkFor(img: StagedImage) {
     this.listeningScaleCancel.cancel()
 
-    const startScale = this.stagedFollowScale
-    const targetScale = this.stagedOriginalScale.uniformScale(STAGING_SHRINK_SCALE)
+    const startScale = img.followScale
+    const targetScale = img.originalScale.uniformScale(STAGING_SHRINK_SCALE)
 
     animate({
       easing: "ease-out-back",
       duration: 0.4,
       update: (t: number) => {
-        if (!this.stagedFollowScale) return
-        this.stagedFollowScale = vec3.lerp(startScale, targetScale, t)
+        img.followScale = vec3.lerp(startScale, targetScale, t)
       },
       ended: null,
-      cancelSet: this.shrinkCancel,
+      cancelSet: img.shrinkCancel,
     })
   }
 
-  private clearStagedImage(destroy: boolean) {
-    this.stagedImageTex = null
-    this.stagedCaptionPos = null
-    this.stagedCaptionRot = null
+  private removeStagedImage(index: number, destroy: boolean) {
+    if (index < 0 || index >= this.stagedImages.length) return
+    const img = this.stagedImages[index]
 
-    if (this.shrinkCancel) this.shrinkCancel.cancel()
-    this.listeningScaleCancel.cancel()
+    // Guard against double-destroy
+    if (!img.sceneObj && destroy) return
 
-    if (this.stagingTimeoutEvent) {
-      this.removeEvent(this.stagingTimeoutEvent)
-      this.stagingTimeoutEvent = null
+    img.shrinkCancel.cancel()
+
+    if (img.timeoutEvent) {
+      this.removeEvent(img.timeoutEvent)
+      img.timeoutEvent = null
     }
 
-    if (destroy && this.stagedSceneObj && this.stagedFollowScale) {
-      // Animate scale to zero while the follow loop keeps it in front of camera
-      const obj = this.stagedSceneObj
-      const startScale = this.stagedFollowScale
-      this.stagedSceneObj = null
+    if (destroy) {
+      const obj = img.sceneObj
+      img.sceneObj = null
+      const startScale = img.followScale
 
       animate({
         easing: "ease-in-back",
         duration: 0.3,
         update: (t: number) => {
-          if (!this.stagedFollowScale) return
-          this.stagedFollowScale = vec3.lerp(startScale, vec3.zero(), t)
+          img.followScale = vec3.lerp(startScale, vec3.zero(), t)
         },
         ended: () => {
-          this.stagedAnchorTrans = null
-          this.stagedFollowScale = null
-          this.stagedOriginalScale = null
-          this.showImageAboveCaption = false
-          obj.destroy()
+          const currentIdx = this.stagedImages.indexOf(img)
+          if (currentIdx >= 0) {
+            this.stagedImages.splice(currentIdx, 1)
+            if (this.activeQueryIndex >= 0) {
+              if (currentIdx < this.activeQueryIndex) {
+                this.activeQueryIndex--
+              } else if (currentIdx === this.activeQueryIndex) {
+                this.activeQueryIndex = -1
+              }
+            }
+          }
+          if (obj) obj.destroy()
         },
       })
     } else {
-      this.stagedAnchorTrans = null
-      this.stagedFollowScale = null
-      this.stagedOriginalScale = null
-      this.showImageAboveCaption = false
+      this.stagedImages.splice(index, 1)
+      if (this.activeQueryIndex >= 0) {
+        if (index < this.activeQueryIndex) {
+          this.activeQueryIndex--
+        } else if (index === this.activeQueryIndex) {
+          this.activeQueryIndex = -1
+        }
+      }
     }
   }
 
@@ -342,13 +360,6 @@ export class VoiceQueryController extends BaseScriptComponent {
   }
 
   private getCurrentCaptionPose(): {pos: vec3; rot: quat} {
-    if (this.stagedCaptionPos && this.stagedCaptionRot) {
-      return {
-        pos: this.stagedCaptionPos,
-        rot: this.stagedCaptionRot,
-      }
-    }
-
     return {
       pos: this.getDefaultPos(),
       rot: this.getDefaultRot(),
@@ -419,9 +430,9 @@ export class VoiceQueryController extends BaseScriptComponent {
     if (!query) {
       print("No speech detected")
       this.updateCaption("No speech detected")
-      if (this.showImageAboveCaption) {
-        this.showImageAboveCaption = false
-        this.animateBackToShrink()
+      if (this.activeQueryIndex >= 0 && this.stagedImages[this.activeQueryIndex]) {
+        this.animateBackToShrinkFor(this.stagedImages[this.activeQueryIndex])
+        this.activeQueryIndex = -1
       }
       const clearEvent = this.createEvent("DelayedCallbackEvent")
       clearEvent.bind(() => {
@@ -435,12 +446,14 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.updateCaption("Thinking...")
     this.showLoading()
 
-    if (this.stagedImageTex) {
-      this.agent.sendImageWithQuery(this.stagedImageTex, query, (response) => {
+    const activeImg = this.activeQueryIndex >= 0 ? this.stagedImages[this.activeQueryIndex] : null
+    if (activeImg) {
+      this.agent.sendImageWithQuery(activeImg.tex, query, (response) => {
         this.hideLoading()
         this.updateCaption(response)
         this.scheduleResponseTimeout()
-        this.clearStagedImage(true)
+        const idx = this.stagedImages.indexOf(activeImg)
+        if (idx >= 0) this.removeStagedImage(idx, true)
       })
     } else {
       this.agent.sendTextOnly(query, (response) => {
@@ -473,9 +486,14 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.lockCaptionPose()
     this.updateCaption("Listening...")
 
-    if (this.stagedImageTex) {
-      this.showImageAboveCaption = true
-      this.animateToListeningScale()
+    if (this.stagedImages.length > 0) {
+      this.activeQueryIndex = this.stagedImages.length - 1
+      const activeImg = this.stagedImages[this.activeQueryIndex]
+      if (activeImg.timeoutEvent) {
+        this.removeEvent(activeImg.timeoutEvent)
+        activeImg.timeoutEvent = null
+      }
+      this.animateToListeningScaleFor(activeImg)
     }
 
     print("ASR started — listening...")
@@ -552,9 +570,9 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.clearPendingSendEvent()
     this.clearProcessingHintEvent()
     this.caption.hide()
-    if (this.showImageAboveCaption) {
-      this.showImageAboveCaption = false
-      this.animateBackToShrink()
+    if (this.activeQueryIndex >= 0 && this.stagedImages[this.activeQueryIndex]) {
+      this.animateBackToShrinkFor(this.stagedImages[this.activeQueryIndex])
+      this.activeQueryIndex = -1
     }
   }
 
