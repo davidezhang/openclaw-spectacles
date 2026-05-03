@@ -309,6 +309,29 @@ export class VoiceQueryController extends BaseScriptComponent {
     }
   }
 
+  private clearAllStagedTimeouts() {
+    for (const img of this.stagedImages) {
+      if (img.timeoutEvent) {
+        this.removeEvent(img.timeoutEvent)
+        img.timeoutEvent = null
+      }
+    }
+  }
+
+  private rearmAllStagedTimeouts() {
+    for (const img of this.stagedImages) {
+      if (img.timeoutEvent) continue // already has a timer
+      if (!img.sceneObj) continue     // being destroyed
+      img.timeoutEvent = this.createEvent("DelayedCallbackEvent")
+      img.timeoutEvent.bind(() => {
+        print("Staging timeout — discarding staged image")
+        const idx = this.stagedImages.indexOf(img)
+        if (idx >= 0) this.removeStagedImage(idx, true)
+      })
+      img.timeoutEvent.reset(STAGING_TIMEOUT_SEC)
+    }
+  }
+
   // ── Right-hand pinch-and-hold ASR ────────────────────────────────────
 
   private onRightPinchDown = () => {
@@ -434,6 +457,7 @@ export class VoiceQueryController extends BaseScriptComponent {
         this.animateBackToShrinkFor(this.stagedImages[this.activeQueryIndex])
         this.activeQueryIndex = -1
       }
+      this.rearmAllStagedTimeouts()
       const clearEvent = this.createEvent("DelayedCallbackEvent")
       clearEvent.bind(() => {
         this.caption.hide()
@@ -444,22 +468,21 @@ export class VoiceQueryController extends BaseScriptComponent {
 
     print("Sending query: " + query)
     this.updateCaption("Thinking...")
-    this.showLoading()
 
     const activeImg = this.activeQueryIndex >= 0 ? this.stagedImages[this.activeQueryIndex] : null
     if (activeImg) {
       this.agent.sendImageWithQuery(activeImg.tex, query, (response) => {
-        this.hideLoading()
         this.updateCaption(response)
         this.scheduleResponseTimeout()
         const idx = this.stagedImages.indexOf(activeImg)
         if (idx >= 0) this.removeStagedImage(idx, true)
+        this.rearmAllStagedTimeouts()
       })
     } else {
       this.agent.sendTextOnly(query, (response) => {
-        this.hideLoading()
         this.updateCaption(response)
         this.scheduleResponseTimeout()
+        this.rearmAllStagedTimeouts()
       })
     }
   }
@@ -487,13 +510,10 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.updateCaption("Listening...")
 
     if (this.stagedImages.length > 0) {
+      // Pause timeouts for ALL staged images while recording
+      this.clearAllStagedTimeouts()
       this.activeQueryIndex = this.stagedImages.length - 1
-      const activeImg = this.stagedImages[this.activeQueryIndex]
-      if (activeImg.timeoutEvent) {
-        this.removeEvent(activeImg.timeoutEvent)
-        activeImg.timeoutEvent = null
-      }
-      this.animateToListeningScaleFor(activeImg)
+      this.animateToListeningScaleFor(this.stagedImages[this.activeQueryIndex])
     }
 
     print("ASR started — listening...")
@@ -574,6 +594,7 @@ export class VoiceQueryController extends BaseScriptComponent {
       this.animateBackToShrinkFor(this.stagedImages[this.activeQueryIndex])
       this.activeQueryIndex = -1
     }
+    this.rearmAllStagedTimeouts()
   }
 
   // Caption at a default position (for text-only queries without a crop region)
