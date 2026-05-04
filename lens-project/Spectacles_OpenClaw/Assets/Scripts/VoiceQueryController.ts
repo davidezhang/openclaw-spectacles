@@ -13,6 +13,16 @@ const LISTENING_IMAGE_SCALE_FACTOR = 0.6
 const RECORDING_DEBOUNCE_SEC = 0.1
 const STAGED_IMAGE_GAP = 1.0
 
+// Helix gallery layout
+const GALLERY_HELIX_RADIUS = 8          // cm — radius of the helix
+const GALLERY_HELIX_VERTICAL_STEP = 4  // cm — vertical spacing per item
+const GALLERY_HELIX_ANGLE_STEP_DEG = 60  // degrees — angular spacing per item
+const GALLERY_ITEM_HEIGHT = 9            // cm — fixed display height; width = height * aspect
+const GALLERY_DISTANCE_FROM_CAM = 50     // cm — distance forward from cam at open time
+const GALLERY_ROTATION_SPEED_DEG_S = 8   // slow Y-axis rotation
+const GALLERY_OPEN_DURATION = 0.5
+const GALLERY_GRASP_DEBOUNCE_SEC = 0.6   // ignore repeat grasps within this window
+
 interface StagedImage {
   tex: Texture
   sceneObj: SceneObject | null
@@ -21,6 +31,14 @@ interface StagedImage {
   originalScale: vec3
   shrinkCancel: CancelSet
   timeoutEvent: any
+}
+
+interface ArchivedImage {
+  tex: Texture
+  picAnchor: SceneObject
+  trans: Transform
+  aspectRatio: number
+  scaleCancel: CancelSet
 }
 
 @component
@@ -66,6 +84,15 @@ export class VoiceQueryController extends BaseScriptComponent {
   private loadingFollowVerticalOffset: number = -10
   private loadingScale: vec3 = new vec3(13, 10, 1)
 
+  // Helix gallery state
+  private archivedImages: ArchivedImage[] = []
+  private galleryOpen: boolean = false
+  private galleryCenter: vec3 = vec3.zero()
+  private galleryBaseRot: quat = quat.quatIdentity()
+  private gallerySpinAngleDeg: number = 0
+  private lastGraspTime: number = -10
+  private gestureModule: GestureModule = require("LensStudio:GestureModule")
+
   // Scanner lock — suppresses ASR while two-hand crop is active
   isScannerActive: boolean = false
 
@@ -80,12 +107,18 @@ export class VoiceQueryController extends BaseScriptComponent {
     this.createEvent("UpdateEvent").bind(() => {
       this.updateStagedFollow()
       this.updateLoadingFollow()
+      this.updateGallerySpin()
     })
 
     if (!this.isEditor) {
       this.rightHand.onPinchDown.add(this.onRightPinchDown)
       this.rightHand.onPinchUp.add(this.onRightPinchUp)
       this.leftHand.onPinchDown.add(this.onLeftPinchDown)
+
+      // Left-hand grasp toggles the spatial gallery (open hand → fist).
+      this.gestureModule
+        .getGrabBeginEvent(GestureModule.HandType.Left)
+        .add(() => this.onLeftGraspBegin())
     }
   }
 
@@ -294,7 +327,7 @@ export class VoiceQueryController extends BaseScriptComponent {
               }
             }
           }
-          if (obj) obj.destroy()
+          if (obj) this.archiveScannerObj(img, obj)
         },
       })
     } else {
@@ -329,6 +362,232 @@ export class VoiceQueryController extends BaseScriptComponent {
         if (idx >= 0) this.removeStagedImage(idx, true)
       })
       img.timeoutEvent.reset(STAGING_TIMEOUT_SEC)
+    }
+  }
+
+  // ── Spatial helix gallery ───────────────────────────────────────────
+
+  /**
+   * Detach the picAnchor child (which carries the captured texture +
+   * RoundedRectangleStroke material with feathered edges) from the Scanner
+   * shell, destroy the rest of the Scanner, and add it to the archived
+   * helix gallery.
+   */
+  private archiveScannerObj(img: StagedImage, scannerRoot: SceneObject) {
+    const picAnchor = img.anchorTrans.getSceneObject()
+    if (!picAnchor || isNull(picAnchor)) {
+      scannerRoot.destroy()
+      return
+    }
+
+    // Capture aspect ratio from the live on-stage scale (W, H, 1).
+    const onStageScale = img.originalScale
+    const aspect = onStageScale.y > 0.0001 ? onStageScale.x / onStageScale.y : 1.0
+
+    // Detach picAnchor from the Scanner shell so we can dispose the shell.
+    // setParent(null) re-parents to the scene root and preserves the
+    // SceneObject so destroying the Scanner shell below doesn't destroy it.
+    picAnchor.setParent(null as unknown as SceneObject)
+
+    // Now safe to destroy the Scanner shell (corners, frame, AI-Caption,
+    // loading indicator) without taking the picture with it.
+    scannerRoot.destroy()
+
+    const archived: ArchivedImage = {
+      tex: img.tex,
+      picAnchor: picAnchor,
+      trans: img.anchorTrans,
+      aspectRatio: aspect,
+      scaleCancel: new CancelSet(),
+    }
+
+    // Enable two-sided rendering on the actual render child (CameraCrop),
+    // not just the ImageAnchor parent.
+    this.enableTwoSidedRecursively(picAnchor)
+
+    this.archivedImages.push(archived)
+    print("Image archived (" + this.archivedImages.length + " in gallery)")
+
+    if (this.galleryOpen) {
+      this.placeArchivedImage(archived, this.archivedImages.length - 1, true)
+    } else {
+      // Park hidden until the gallery opens.
+      picAnchor.enabled = false
+    }
+  }
+
+  private enableTwoSidedRecursively(obj: SceneObject) {
+    const rmv = obj.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    if (rmv) {
+      const count = rmv.getMaterialsCount()
+      for (let i = 0; i < count; i++) {
+        const mat = rmv.getMaterial(i)
+        if (mat && mat.mainPass) {
+          mat.mainPass.twoSided = true
+        }
+      }
+      if (rmv.mainPass) {
+        rmv.mainPass.twoSided = true
+      }
+    }
+
+    for (let i = 0; i < obj.getChildrenCount(); i++) {
+      this.enableTwoSidedRecursively(obj.getChild(i))
+    }
+  }
+
+  private onLeftGraspBegin() {
+    const now = getTime()
+    if (now - this.lastGraspTime < GALLERY_GRASP_DEBOUNCE_SEC) return
+    this.lastGraspTime = now
+
+    // Don't toggle while a crop is in progress (both hands engaged).
+    if (this.isScannerActive) return
+    // Don't toggle while ASR is recording (right pinch held).
+    if (this.isRecording || this.isWaitingForFinalTranscript) return
+
+    if (this.galleryOpen) {
+      this.closeGallery()
+    } else {
+      this.openGallery()
+    }
+  }
+
+  private openGallery() {
+    if (this.archivedImages.length === 0) {
+      print("Gallery is empty — nothing to show")
+      return
+    }
+
+    this.galleryOpen = true
+    this.gallerySpinAngleDeg = 0
+
+    // World-anchor the helix in front of the user at the moment they open it.
+    const camPos = this.camTrans.getWorldPosition()
+    const camForward = this.camTrans.forward
+    // camForward in Lens Studio points away from the look direction, hence -.
+    this.galleryCenter = camPos.add(camForward.uniformScale(-GALLERY_DISTANCE_FROM_CAM))
+
+    print("Opening gallery with " + this.archivedImages.length + " image(s)")
+
+    for (let i = 0; i < this.archivedImages.length; i++) {
+      this.placeArchivedImage(this.archivedImages[i], i, true)
+    }
+  }
+
+  private closeGallery() {
+    this.galleryOpen = false
+    print("Closing gallery")
+    for (const a of this.archivedImages) {
+      this.animateArchivedScale(a, 0, () => {
+        if (a.picAnchor && !isNull(a.picAnchor)) a.picAnchor.enabled = false
+      })
+    }
+  }
+
+  /**
+   * Position one archived image at its slot on the helix.
+   * Index drives helix angle + height. If `animateIn` is true, the image
+   * scales up from 0 for a "pop in" feel.
+   */
+  private placeArchivedImage(a: ArchivedImage, index: number, animateIn: boolean) {
+    if (!a.picAnchor || isNull(a.picAnchor)) return
+    a.picAnchor.enabled = true
+
+    const targetTransform = this.computeHelixTransform(index)
+    this.applyArchivedTransform(a, targetTransform)
+
+    if (animateIn) {
+      a.trans.setWorldScale(vec3.zero())
+      this.animateArchivedScale(a, 1, null)
+    } else {
+      const scale = this.archivedFinalScale(a)
+      a.trans.setWorldScale(scale)
+    }
+  }
+
+  private archivedFinalScale(a: ArchivedImage): vec3 {
+    return new vec3(GALLERY_ITEM_HEIGHT * a.aspectRatio, GALLERY_ITEM_HEIGHT, 1)
+  }
+
+  private animateArchivedScale(a: ArchivedImage, targetT: number, onEnded: (() => void) | null) {
+    a.scaleCancel.cancel()
+    const finalScale = this.archivedFinalScale(a)
+    const startScale = a.trans.getWorldScale()
+    const endScale = finalScale.uniformScale(targetT)
+
+    animate({
+      easing: "ease-out-back",
+      duration: GALLERY_OPEN_DURATION,
+      update: (t: number) => {
+        const scale = vec3.lerp(startScale, endScale, t)
+        a.trans.setWorldScale(scale)
+      },
+      ended: onEnded as any,
+      cancelSet: a.scaleCancel,
+    })
+  }
+
+  private applyArchivedTransform(
+    a: ArchivedImage,
+    targetTransform: {pos: vec3; rot: quat; normal: vec3}
+  ) {
+    a.trans.setWorldPosition(targetTransform.pos)
+    a.trans.setWorldRotation(targetTransform.rot)
+  }
+
+  /**
+   * Compute the world transform for slot `index` on the helix, including
+   * the current spin angle. The image normal is computed directly from its
+   * world-space offset from the helix axis, so the plane is exactly tangent
+   * to the helix (normal = radial-out).
+   */
+  private computeHelixTransform(index: number): {pos: vec3; rot: quat; normal: vec3} {
+    const angleDeg = index * GALLERY_HELIX_ANGLE_STEP_DEG + this.gallerySpinAngleDeg
+    const angleRad = (angleDeg * Math.PI) / 180
+
+    // Center the helix vertically around 0 across the current item count.
+    const total = this.archivedImages.length
+    const yOffset = (index - (total - 1) / 2) * GALLERY_HELIX_VERTICAL_STEP
+
+    const sinA = Math.sin(angleRad)
+    const cosA = Math.cos(angleRad)
+
+    // World-space helix around a vertical axis through galleryCenter.
+    const localOffset = new vec3(GALLERY_HELIX_RADIUS * sinA, yOffset, GALLERY_HELIX_RADIUS * cosA)
+    const pos = this.galleryCenter.add(localOffset)
+
+    // Build the image basis the same way PictureBehavior does:
+    //   col0 = right, col1 = up, col2 = forward (= right × up, points out
+    //   of the image plane toward viewer of front face).
+    // We want the image's outward face (+Z local) to point exactly radially
+    // out from the helix axis.
+    const radialOut = new vec3(sinA, 0, cosA).normalize()
+    const worldUp = vec3.up()
+    const worldRight = worldUp.cross(radialOut).normalize()
+
+    const rotMat = new mat3()
+    rotMat.column0 = worldRight
+    rotMat.column1 = worldUp
+    rotMat.column2 = radialOut
+    const rot = quat.fromRotationMat(rotMat)
+
+    return {pos, rot, normal: radialOut}
+  }
+
+  private updateGallerySpin() {
+    if (!this.galleryOpen) return
+    if (this.archivedImages.length === 0) return
+
+    this.gallerySpinAngleDeg += GALLERY_ROTATION_SPEED_DEG_S * getDeltaTime()
+    if (this.gallerySpinAngleDeg > 360) this.gallerySpinAngleDeg -= 360
+
+    for (let i = 0; i < this.archivedImages.length; i++) {
+      const a = this.archivedImages[i]
+      if (!a.picAnchor || isNull(a.picAnchor)) continue
+      // Skip if a scale animation is currently driving the transform.
+      const t = this.computeHelixTransform(i)
+      this.applyArchivedTransform(a, t)
     }
   }
 
